@@ -1,0 +1,16 @@
+Rebuttal CPCA/HOSVD regression ablation: archived validation
+Historical run id: figure1_rank3_y10_x10_n1000_seed20260825_fairals_hosvd_grid_20260727
+Original frozen run: 18/18 checks passed
+
+The historical workflow validated 80 unique seed/fingerprint rows, 5,280
+trajectory rows, 480 completed method fits, finite metrics, common CPCA/HOSVD
+iteration-0 values across the three methods, terminal-trajectory consistency,
+the seed formula, independent fingerprint regeneration, artifact hashes, and
+the two frozen source hashes.
+
+One original check also confirmed that four candidate PNG/PDF files existed in
+the historical run directory. Those plotting files are intentionally not
+bundled and are not read by SegreCP. This package uses only the numerical
+CPCA-versus-HOSVD ablation reported in the rebuttal. The original check table
+is retained in validation_checks.csv for provenance; package_subset_manifest.csv
+hashes every numerical artifact actually shipped here.

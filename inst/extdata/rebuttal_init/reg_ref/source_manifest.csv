@@ -1,0 +1,3 @@
+role,file,bytes,sha256
+historical_runner,figure1_rebuild/run_figure1_rebuild.R,31635,ae47f84d280564ca95836b3e49bee8fd82a9e6a0e4da18a7440e1ec7140ad06b
+historical_solver,rgn_benchmark/tensor-regression.R,159464,50ee798a90a7e277505e7deaf5de6d9205bbf9825b9ef701a29b141c2ff507a7

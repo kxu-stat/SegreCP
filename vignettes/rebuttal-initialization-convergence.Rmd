@@ -1,0 +1,565 @@
+---
+title: "Rebuttal Initialization Sensitivity and Convergence"
+vignette: >
+  %\VignetteIndexEntry{Rebuttal Initialization Sensitivity and Convergence}
+  %\VignetteEngine{knitr::knitr}
+  %\VignetteEncoding{UTF-8}
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(
+  collapse = TRUE,
+  comment = "#>",
+  fig.width = 7.2,
+  fig.height = 4.6,
+  fig.align = "center",
+  dpi = 120
+)
+
+palette <- c(
+  "CP-ALS" = "#4D4D4D",
+  "RGD" = "#D55E00",
+  "RGN" = "#0072B2",
+  "CPCA" = "#0072B2",
+  "HOSVD" = "#D55E00"
+)
+method_lty <- c("CP-ALS" = 3, "RGD" = 2, "RGN" = 1)
+method_pch <- c("CP-ALS" = 15, "RGD" = 17, "RGN" = 16)
+method_pch_open <- c("CP-ALS" = 0, "RGD" = 2, "RGN" = 1)
+
+locate_extdata <- function() {
+  installed <- system.file(
+    "extdata", "rebuttal_init", package = "SegreCP"
+  )
+  candidates <- c(
+    file.path("inst", "extdata", "rebuttal_init"),
+    file.path("..", "inst", "extdata", "rebuttal_init"),
+    installed
+  )
+  candidates <- candidates[nzchar(candidates)]
+  found <- candidates[dir.exists(candidates)]
+  if (!length(found)) {
+    stop("Cannot locate the frozen rebuttal initializer-sensitivity data.")
+  }
+  normalizePath(found[[1L]], mustWork = TRUE)
+}
+
+read_artifact <- function(section, file) {
+  utils::read.csv(
+    file.path(extdata_root, section, file),
+    stringsAsFactors = FALSE,
+    check.names = FALSE
+  )
+}
+
+extdata_root <- locate_extdata()
+
+decomp_legacy <- read_artifact("decomp_ref", "trajectory_raw.csv")
+decomp_legacy_init <- read_artifact(
+  "decomp_ref", "initialization_summary.csv"
+)
+decomp_legacy_checks <- read_artifact(
+  "decomp_ref", "validation_checks.csv"
+)
+
+decomp_package <- read_artifact(
+  "decomp_pkg", "trajectory_raw.csv"
+)
+decomp_package_checks <- read_artifact(
+  "decomp_pkg", "validation_checks.csv"
+)
+decomp_parity <- read_artifact(
+  "decomp_pkg", "legacy_reference_parity.csv"
+)
+
+regression_init <- read_artifact(
+  "reg_ref", "initialization_summary.csv"
+)
+regression_checks <- read_artifact(
+  "reg_ref", "validation_checks.csv"
+)
+
+legacy_pass_col <- if ("passed" %in% names(decomp_legacy_checks)) {
+  "passed"
+} else {
+  "pass"
+}
+package_pass_col <- if ("passed" %in% names(decomp_package_checks)) {
+  "passed"
+} else {
+  "pass"
+}
+regression_pass_col <- if ("passed" %in% names(regression_checks)) {
+  "passed"
+} else {
+  "pass"
+}
+
+stopifnot(
+  all(decomp_legacy_checks[[legacy_pass_col]]),
+  all(decomp_package_checks[[package_pass_col]]),
+  all(regression_checks[[regression_pass_col]]),
+  nrow(decomp_legacy) == 20L * 2L * 3L * 11L,
+  nrow(decomp_package) == 20L * 2L * 3L * 11L,
+  identical(sort(unique(decomp_legacy$iteration)), 0:10),
+  identical(sort(unique(decomp_package$iteration)), 0:10),
+  all(c("CPCA", "HOSVD") %in% decomp_legacy$initialization),
+  all(c("CP-ALS", "RGD", "RGN") %in% decomp_legacy$method)
+)
+
+mean_trajectory <- function(x) {
+  aggregate(
+    relative_frobenius_error ~ initialization + method + iteration,
+    x,
+    mean
+  )
+}
+
+legacy_mean <- mean_trajectory(decomp_legacy)
+package_mean <- mean_trajectory(decomp_package)
+
+stopifnot(
+  "objective" %in% names(decomp_package),
+  all(is.finite(decomp_package$objective))
+)
+objective_raw <- decomp_package[order(
+  decomp_package$replication,
+  decomp_package$initialization,
+  decomp_package$method,
+  decomp_package$iteration
+), ]
+objective_key <- interaction(
+  objective_raw$replication,
+  objective_raw$initialization,
+  objective_raw$method,
+  drop = TRUE
+)
+objective_raw$objective_ratio <- objective_raw$objective /
+  ave(objective_raw$objective, objective_key, FUN = function(z) z[[1L]])
+objective_mean <- aggregate(
+  objective_ratio ~ initialization + method + iteration,
+  objective_raw,
+  mean
+)
+
+objective_path_stats <- do.call(rbind, lapply(
+  split(objective_raw, objective_key),
+  function(z) {
+    z <- z[order(z$iteration), ]
+    data.frame(
+      initialization = z$initialization[[1L]],
+      method = z$method[[1L]],
+      max_objective_increase = max(c(0, diff(z$objective)))
+    )
+  }
+))
+
+oracle_source <- decomp_package
+oracle_key <- interaction(
+  oracle_source$replication,
+  oracle_source$initialization,
+  oracle_source$method,
+  drop = TRUE
+)
+oracle_path_stats <- do.call(rbind, lapply(
+  split(oracle_source, oracle_key),
+  function(z) {
+    z <- z[order(z$iteration), ]
+    increases <- diff(z$relative_frobenius_error)
+    data.frame(
+      initialization = z$initialization[[1L]],
+      method = z$method[[1L]],
+      path_increases = any(increases > 1e-12),
+      max_oracle_increase = max(c(0, increases))
+    )
+  }
+))
+
+oracle_summary <- do.call(rbind, lapply(
+  split(
+    oracle_path_stats,
+    interaction(
+      oracle_path_stats$initialization,
+      oracle_path_stats$method,
+      drop = TRUE
+    )
+  ),
+  function(z) {
+    data.frame(
+      Initialization = z$initialization[[1L]],
+      Method = z$method[[1L]],
+      Paths = nrow(z),
+      `Paths with an oracle-error increase` = sum(z$path_increases),
+      `Largest increase` = max(z$max_oracle_increase),
+      check.names = FALSE
+    )
+  }
+))
+rownames(oracle_summary) <- NULL
+```
+
+This vignette turns the rebuttal-stage initialization tables into visual,
+machine-checked diagnostics. It reads the frozen artifacts shipped with the
+package; it does not rerun the 20-replication simulations while the package is
+built. The experimental unit is one replication, and every displayed mean is
+over 20 paired replications.
+
+This vignette is evidence reconstruction, not an additional estimator API.
+CP-ALS appears only as frozen experiment output. The installed package code and
+`inst/scripts/ours_methods.R` implement only RGD, RGN, and initialization; the
+current comparison entry point is kept outside the built package.
+
+The scope is the CPCA-versus-HOSVD ablation newly reported in the rebuttal.
+Although the historical regression run identifier came from the same
+simulation workflow as an earlier figure, this vignette neither reads nor
+publishes that figure's image or plotting output.
+
+The decomposition experiment uses dimensions `60 x 30 x 30`, CP rank 3,
+condition number 30, coherence 0.5, noise standard deviation 1, and 10 complete
+outer sweeps. The regression rows use a `10 x 10` tensor response and a
+`10 x 10 x 10` tensor predictor. Comparisons are paired within a row; values
+should not be compared across the decomposition and regression tasks.
+
+## Initialization sensitivity
+
+The first diagnostic asks whether CPCA and HOSVD enter the refinement stage at
+comparable errors. Both quantities are relative Frobenius errors: tensor error
+for decomposition and coefficient error for regression. Error bars are the
+frozen 95% bootstrap intervals.
+
+```{r initialization-sensitivity, echo=FALSE, fig.width=7.6, fig.height=4.8, fig.cap="Initial relative Frobenius error under CPCA and HOSVD. Intervals are frozen 95% bootstrap intervals over 20 paired replications; comparisons are within rows."}
+decomp_initial_plot <- data.frame(
+  setting = "Decomposition (0.5, 1)",
+  initialization = decomp_legacy_init$initialization,
+  mean = decomp_legacy_init$initial_error_mean,
+  lower = decomp_legacy_init$ci_lower,
+  upper = decomp_legacy_init$ci_upper,
+  stringsAsFactors = FALSE
+)
+
+regression_initial_plot <- data.frame(
+  setting = sprintf(
+    "Regression (%g, %g)",
+    regression_init$coherence,
+    regression_init$noise_sd
+  ),
+  initialization = regression_init$initialization,
+  mean = regression_init$initial_error_mean,
+  lower = regression_init$initial_error_lower,
+  upper = regression_init$initial_error_upper,
+  stringsAsFactors = FALSE
+)
+
+initial_plot <- rbind(decomp_initial_plot, regression_initial_plot)
+setting_order <- c(
+  "Decomposition (0.5, 1)",
+  "Regression (0, 0.5)",
+  "Regression (0, 1)",
+  "Regression (0.5, 0.5)",
+  "Regression (0.5, 1)"
+)
+initial_plot$y <- match(initial_plot$setting, rev(setting_order))
+
+old_par <- par(no.readonly = TRUE)
+par(mar = c(4.2, 8.2, 2.6, 0.8), las = 1)
+plot(
+  range(initial_plot$lower, initial_plot$upper),
+  range(initial_plot$y) + c(-0.45, 0.45),
+  type = "n",
+  axes = FALSE,
+  xlab = "Initial relative Frobenius error",
+  ylab = "",
+  main = "CPCA and HOSVD initialization error"
+)
+axis(1, col = "#666666", col.axis = "#333333")
+axis(
+  2,
+  at = seq_along(setting_order),
+  labels = rev(setting_order),
+  tick = FALSE,
+  cex.axis = 0.86
+)
+abline(h = seq_along(setting_order), col = "#ECECEC", lwd = 1)
+for (initializer in c("CPCA", "HOSVD")) {
+  z <- initial_plot[initial_plot$initialization == initializer, ]
+  offset <- if (initializer == "CPCA") 0.09 else -0.09
+  segments(
+    z$lower, z$y + offset, z$upper, z$y + offset,
+    col = palette[[initializer]], lwd = 2
+  )
+  points(
+    z$mean, z$y + offset,
+    col = palette[[initializer]],
+    pch = if (initializer == "CPCA") 16 else 17,
+    cex = 1.05
+  )
+}
+legend(
+  "bottomright",
+  legend = c("CPCA", "HOSVD"),
+  col = palette[c("CPCA", "HOSVD")],
+  pch = c(16, 17),
+  bty = "n",
+  horiz = TRUE,
+  inset = c(0, -0.01)
+)
+box(bty = "l", col = "#666666")
+par(old_par)
+```
+
+CPCA has the lower mean initial error in every displayed setting. This is an
+initialization comparison, not evidence that one optimizer must have the best
+terminal error.
+
+## Full decomposition trajectories
+
+The next figure overlays the rebuttal-stage trajectory (solid lines and filled
+points) and the package compatibility rerun (dashed lines and open points).
+Color, line type, and point shape jointly identify the methods and sources.
+
+```{r decomposition-trajectories, echo=FALSE, fig.width=7.6, fig.height=4.4, fig.cap="Mean decomposition error over all 10 sweeps. Solid filled trajectories are the rebuttal-stage results; dashed open trajectories are the package compatibility rerun."}
+trajectory_ylim <- range(
+  legacy_mean$relative_frobenius_error,
+  package_mean$relative_frobenius_error
+)
+trajectory_ylim <- trajectory_ylim + c(-0.02, 0.02) * diff(trajectory_ylim)
+
+old_par <- par(no.readonly = TRUE)
+par(
+  mfrow = c(1, 2), mar = c(4.2, 4.7, 3.0, 0.8),
+  oma = c(0, 0, 1.0, 0), las = 1
+)
+for (initializer in c("CPCA", "HOSVD")) {
+  plot(
+    0:10,
+    rep(NA_real_, 11),
+    type = "n",
+    ylim = trajectory_ylim,
+    xlab = "Completed outer sweeps",
+    ylab = "Mean relative tensor error",
+    main = paste(initializer, "initialization"),
+    axes = FALSE
+  )
+  axis(1, at = seq(0, 10, by = 2), col = "#666666", col.axis = "#333333")
+  axis(2, col = "#666666", col.axis = "#333333")
+  abline(h = pretty(trajectory_ylim), col = "#ECECEC", lwd = 1)
+  box(bty = "l", col = "#666666")
+
+  for (method in c("CP-ALS", "RGD", "RGN")) {
+    z_legacy <- legacy_mean[
+      legacy_mean$initialization == initializer &
+        legacy_mean$method == method,
+    ]
+    z_package <- package_mean[
+      package_mean$initialization == initializer &
+        package_mean$method == method,
+    ]
+    z_legacy <- z_legacy[order(z_legacy$iteration), ]
+    z_package <- z_package[order(z_package$iteration), ]
+
+    lines(
+      z_legacy$iteration,
+      z_legacy$relative_frobenius_error,
+      col = palette[[method]],
+      lty = 1,
+      lwd = 2.1
+    )
+    points(
+      z_legacy$iteration,
+      z_legacy$relative_frobenius_error,
+      col = palette[[method]],
+      pch = method_pch[[method]],
+      cex = 0.68
+    )
+    lines(
+      z_package$iteration,
+      z_package$relative_frobenius_error,
+      col = palette[[method]],
+      lty = 2,
+      lwd = 1.6
+    )
+    points(
+      z_package$iteration,
+      z_package$relative_frobenius_error,
+      col = palette[[method]],
+      pch = method_pch_open[[method]],
+      cex = 0.72
+    )
+  }
+
+  if (initializer == "CPCA") {
+    legend(
+      "topright",
+      legend = c("CP-ALS", "RGD", "RGN"),
+      col = palette[c("CP-ALS", "RGD", "RGN")],
+      pch = method_pch[c("CP-ALS", "RGD", "RGN")],
+      lty = rep(1, 3),
+      lwd = 1.8,
+      bty = "n",
+      cex = 0.80
+    )
+  } else {
+    legend(
+      "topright",
+      legend = c("Rebuttal-stage legacy", "Package rerun"),
+      col = "#333333",
+      pch = c(16, 1),
+      lty = c(1, 2),
+      lwd = c(2.1, 1.6),
+      bty = "n",
+      cex = 0.80
+    )
+  }
+}
+mtext("Rebuttal-stage and package decomposition trajectories", outer = TRUE)
+par(old_par)
+```
+
+The CPCA trajectories agree to numerical precision. The archived HOSVD package rerun is
+deliberately **not** labeled an exact legacy replay: `SegreCP` stores a
+canonical representation with nonnegative component weights, whereas the
+historical HOSVD route used a sign-dependent component ordering. The frozen
+parity audit therefore checks mean-path and checkpoint tolerances as well as
+method ranking, instead of requiring identical HOSVD iterates.
+
+```{r parity-summary, echo=FALSE}
+parity_display <- data.frame(
+  Quantity = c(
+    "Maximum CPCA trajectory difference",
+    "Maximum CP-ALS trajectory difference",
+    "Maximum mean-trajectory difference",
+    "Maximum 3/5/10 checkpoint difference",
+    "Checkpoint method ranking preserved",
+    "CPCA/HOSVD contrast preserved"
+  ),
+  Value = c(
+    format(decomp_parity$cpca_max_absolute_difference, scientific = TRUE),
+    format(decomp_parity$cpals_max_absolute_difference, scientific = TRUE),
+    format(
+      decomp_parity$max_absolute_mean_trajectory_difference,
+      scientific = TRUE
+    ),
+    format(
+      decomp_parity$max_absolute_checkpoint_difference,
+      scientific = TRUE
+    ),
+    as.character(decomp_parity$method_ranking_preserved),
+    as.character(decomp_parity$initializer_contrast_preserved)
+  ),
+  stringsAsFactors = FALSE
+)
+knitr::kable(parity_display, row.names = FALSE)
+```
+
+These checks establish reproducibility of the reported pattern under the
+package's canonical representation. They do not turn an empirical trajectory
+comparison into a proof of global convergence.
+
+## Objective convergence in the archived package rerun
+
+For CP-ALS, RGD, and RGN, the archived package artifact records the same observed
+least-squares objective at every completed sweep. The figure normalizes each
+replication by its iteration-0 objective and then averages the ratios. The
+vertical scale is focused on the observed range; it does not start at zero.
+
+```{r objective-convergence, echo=FALSE, fig.width=7.4, fig.height=4.1, fig.cap="Mean observed-objective ratio for the 20 package reruns. The vertical axis is focused on the observed range and does not begin at zero."}
+objective_ylim <- range(objective_mean$objective_ratio)
+objective_ylim <- c(
+  floor(100 * objective_ylim[[1L]]) / 100,
+  min(1.005, objective_ylim[[2L]] + 0.005)
+)
+
+old_par <- par(no.readonly = TRUE)
+par(
+  mfrow = c(1, 2), mar = c(4.2, 4.8, 3.0, 0.8),
+  oma = c(0, 0, 1.0, 0), las = 1
+)
+for (initializer in c("CPCA", "HOSVD")) {
+  plot(
+    0:10,
+    rep(NA_real_, 11),
+    type = "n",
+    ylim = objective_ylim,
+    xlab = "Completed outer sweeps",
+    ylab = "Mean objective / initial objective",
+    main = paste(initializer, "initialization"),
+    axes = FALSE
+  )
+  axis(1, at = seq(0, 10, by = 2), col = "#666666", col.axis = "#333333")
+  axis(2, col = "#666666", col.axis = "#333333")
+  abline(h = pretty(objective_ylim), col = "#ECECEC", lwd = 1)
+  box(bty = "l", col = "#666666")
+
+  for (method in c("CP-ALS", "RGD", "RGN")) {
+    z <- objective_mean[
+      objective_mean$initialization == initializer &
+        objective_mean$method == method,
+    ]
+    z <- z[order(z$iteration), ]
+    lines(
+      z$iteration,
+      z$objective_ratio,
+      col = palette[[method]],
+      lty = method_lty[[method]],
+      lwd = 2
+    )
+    points(
+      z$iteration,
+      z$objective_ratio,
+      col = palette[[method]],
+      pch = method_pch[[method]],
+      cex = 0.72
+    )
+  }
+  if (initializer == "CPCA") {
+    legend(
+      "topright",
+      legend = c("CP-ALS", "RGD", "RGN"),
+      col = palette[c("CP-ALS", "RGD", "RGN")],
+      lty = method_lty[c("CP-ALS", "RGD", "RGN")],
+      pch = method_pch[c("CP-ALS", "RGD", "RGN")],
+      lwd = 2,
+      bty = "n",
+      cex = 0.82
+    )
+  }
+}
+mtext("Observed objective convergence (focused vertical scale)", outer = TRUE)
+par(old_par)
+```
+
+```{r objective-check, echo=FALSE}
+objective_check <- data.frame(
+  Recorded.paths = nrow(objective_path_stats),
+  Paths.with.an.increase = sum(
+    objective_path_stats$max_objective_increase > 1e-10
+  ),
+  Largest.increase = max(objective_path_stats$max_objective_increase),
+  check.names = FALSE
+)
+names(objective_check) <- c(
+  "Recorded paths", "Paths with an increase", "Largest increase"
+)
+knitr::kable(objective_check, row.names = FALSE, digits = 4)
+```
+
+## Oracle error and the noise floor
+
+The relative error to the simulated truth is scientifically useful, but it is
+not the objective minimized by the algorithms. Consequently, an individual
+oracle-error path may rise slightly after reaching the statistical noise floor
+even while the observed objective continues to decrease.
+
+```{r oracle-floor-summary, echo=FALSE}
+oracle_display <- oracle_summary
+oracle_display[["Largest increase"]] <- format(
+  oracle_display[["Largest increase"]],
+  scientific = TRUE,
+  digits = 3
+)
+knitr::kable(oracle_display, row.names = FALSE)
+```
+
+This distinction is why the full trajectories are reported as empirical
+convergence diagnostics rather than as evidence of global convergence or
+per-replication monotonicity of the unknown-truth error.

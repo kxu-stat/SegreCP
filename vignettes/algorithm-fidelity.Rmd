@@ -1,0 +1,70 @@
+---
+title: "Algorithms, Profiles, and Initialization"
+vignette: >
+  %\VignetteIndexEntry{Algorithms, Profiles, and Initialization}
+  %\VignetteEngine{knitr::knitr}
+  %\VignetteEncoding{UTF-8}
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(collapse = TRUE, comment = "#>")
+library(SegreCP)
+```
+
+`SegreCP` implements sequential component updates on the Segre manifold. A
+component is changed, its residual contribution is refreshed immediately, and
+the next component sees that new residual. Every tangent proposal uses the
+exact rank-`(1, ..., 1)` T-HOSVD retraction.
+
+## Two explicit profiles
+
+The manuscript profile fixes component order and RGD step size, runs the
+requested number of full sweeps unless an explicit tolerance is supplied, and
+uses no RGN ridge.
+
+```{r}
+segre_control(profile = "manuscript", max_iter = 20)
+```
+
+The practical profile orders components by current weight, enables an
+observable loss-change tolerance, uses backtracking for regression RGD, and
+records a small RGN ridge.
+
+```{r}
+segre_control(profile = "practical", max_iter = 20)
+```
+
+## Initializers
+
+CPCA and HOSVD are both first-class initializers. The example below creates an
+orthogonal two-component CP tensor.
+
+```{r}
+dims <- c(3, 4, 5)
+factors <- lapply(dims, function(p) diag(p)[, 1:2, drop = FALSE])
+truth <- cp_components(c(3, 1.5), factors)
+x <- reconstruct_cp(truth)
+
+init_cpca <- cp_initialize(x, rank = 2, method = "cpca", split = 1)
+init_hosvd <- cp_initialize(x, rank = 2, method = "hosvd")
+
+cp_relative_error(init_cpca$comps, truth)
+cp_relative_error(init_hosvd$comps, truth)
+```
+
+A custom initializer can return a component list directly.
+
+```{r}
+custom_init <- function(x, rank, supplied) supplied
+fit <- segre_decompose(
+  x, rank = 2, method = "rgn",
+  init = custom_init,
+  init_args = list(supplied = truth),
+  control = segre_control(max_iter = 2)
+)
+fit
+```
+
+For decomposition, RGN is the unit-step RGD update because the observation
+operator is the identity. In regression, RGN instead solves the restricted
+tangent normal equation.

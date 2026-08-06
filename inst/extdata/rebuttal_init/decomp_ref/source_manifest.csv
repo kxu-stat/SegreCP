@@ -1,0 +1,3 @@
+"role","file","sha256"
+"runner","figure1_rebuild/run_decomposition_initialization_sensitivity.R","0b3afa9e2bbe5dcbf840cb4747e8cd2968be070a5c444d28b4c0a8adda710e94"
+"solver","rgn_benchmark_decomp/tensor-CP-decomposition.R","7a8fdd79bf04a234ecce225734a49f5d215c320a67d903c079d158d92326c719"

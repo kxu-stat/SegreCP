@@ -1,0 +1,11 @@
+check,passed
+exact_method_set,TRUE
+exact_grid,TRUE
+exact_row_count,TRUE
+complete_paired_cells,TRUE
+one_seed_per_paired_cell,TRUE
+all_finite,TRUE
+no_loss_stops,TRUE
+timing_exact_method_set,TRUE
+twenty_serial_timing_runs,TRUE
+timing_cell_is_rho05_noise05,TRUE

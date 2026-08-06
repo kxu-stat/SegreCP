@@ -1,0 +1,17 @@
+SegreCP rebuttal-stage decomposition reproduction
+Mode: formal
+Passed: 8/8 validation checks
+                                                                check passed
+                                             expected trajectory rows   TRUE
+                                             all oracle errors finite   TRUE
+                           identical iteration-0 error across methods   TRUE
+                                   unique generated-data fingerprints   TRUE
+                          terminal values match final trajectory rows   TRUE
+                        all observed-loss trajectories non-increasing   TRUE
+                             all six mean trajectories non-increasing   TRUE
+ legacy accuracy and method-ranking parity within recorded tolerances   TRUE
+
+The mean-trajectory checks are empirical diagnostics for this frozen
+design. Observed loss was non-increasing in every recorded package path,
+but oracle error can fluctuate near the noise floor. These diagnostics
+are not a proof of global convergence.

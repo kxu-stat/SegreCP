@@ -1,0 +1,34 @@
+Package: SegreCP
+Type: Package
+Title: Riemannian CP Tensor Estimation on the Segre Manifold
+Version: 0.1.1
+Authors@R: c(
+    person("Ke", "Xu", email = "kxu6@nd.edu", role = c("aut", "cre")),
+    person("Yuefeng", "Han", email = "yuefeng.han@nd.edu", role = "aut")
+  )
+Description: Implements Riemannian gradient descent and Riemannian
+    Gauss-Newton algorithms for noisy low-CP-rank tensor decomposition,
+    scalar-on-tensor regression, and tensor-on-tensor regression. The package
+    uses exact rank-(1,...,1) truncated higher-order singular value
+    decomposition retractions, provides Composite PCA and HOSVD
+    initializations, and accepts both base R arrays and 'rTensor' Tensor
+    objects.
+License: file LICENSE
+Encoding: UTF-8
+Depends: R (>= 4.2.0)
+Imports:
+    methods,
+    Rcpp,
+    rTensor,
+    stats,
+    utils
+LinkingTo: Rcpp
+Suggests:
+    digest,
+    knitr,
+    testthat (>= 3.0.0)
+VignetteBuilder: knitr
+Config/testthat/edition: 3
+Roxygen: list(markdown = TRUE)
+RoxygenNote: 7.3.2
+NeedsCompilation: yes

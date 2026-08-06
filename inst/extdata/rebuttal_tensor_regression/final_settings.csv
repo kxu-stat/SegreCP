@@ -1,0 +1,16 @@
+parameter,value
+coefficient_dimensions,10x10x10x10x10
+output_dimensions,10x10
+input_dimensions,10x10x10
+rank,3
+kappa,30
+n_train,1000
+n_test,1000
+coherence,"0,0.2,0.5,0.75"
+noise_sd,"0,0.5,1"
+replications,20
+iterations,10
+master_seed,20260829
+methods,"CP-ALS,RRR,Tucker-RGD,HOPLS,TT-IHT,RGD,RGN"
+timing_cell,"rho=0.5,noise_sd=0.5"
+timing_scope,method-specific initialization plus solver; CP-ALS/RGD/RGN share the computed CPCA initialization

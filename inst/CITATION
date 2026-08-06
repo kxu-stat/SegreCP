@@ -1,0 +1,10 @@
+bibentry(
+  bibtype = "Unpublished",
+  title = "Guaranteed Noisy CP Tensor Recovery via Riemannian Optimization on the Segre Manifold",
+  author = c(
+    person("Ke", "Xu"),
+    person("Yuefeng", "Han")
+  ),
+  year = "2026",
+  note = "Manuscript and accompanying SegreCP R package"
+)

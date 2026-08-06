@@ -1,0 +1,12 @@
+Decomposition initialization-sensitivity validation
+Run: decomposition_init_rank3_60x30x30_r20_iter10_rho05_sigma1_signal3_alpha05_seed20260829_20260728
+Passed: 8/8 checks
+                                                   check passed
+                                  expected terminal rows   TRUE
+                             all terminal metrics finite   TRUE
+ one initializer hash per replication and initialization   TRUE
+              identical iteration-0 error across methods   TRUE
+                               complete paired contrasts   TRUE
+                      unique generated-data fingerprints   TRUE
+                                expected checkpoint rows   TRUE
+                          all mean trajectories monotone   TRUE

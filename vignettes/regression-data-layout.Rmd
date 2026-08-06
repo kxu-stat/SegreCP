@@ -1,0 +1,54 @@
+---
+title: "Regression Data Layout and rTensor Compatibility"
+vignette: >
+  %\VignetteIndexEntry{Regression Data Layout and rTensor Compatibility}
+  %\VignetteEngine{knitr::knitr}
+  %\VignetteEncoding{UTF-8}
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(collapse = TRUE, comment = "#>")
+library(SegreCP)
+```
+
+The fastest regression input is a dense numeric matrix with observations in
+rows. Arrays and `rTensor::Tensor` objects are accepted for compatibility and
+converted once at the API boundary.
+
+```{r}
+set.seed(14)
+n <- 50
+input_dims <- c(2, 3)
+X_matrix <- matrix(rnorm(n * prod(input_dims)), nrow = n)
+X_array <- array(as.numeric(X_matrix), dim = c(n, input_dims))
+X_tensor <- rTensor::as.tensor(X_array)
+
+u <- lapply(input_dims, function(p) {
+  z <- rnorm(p)
+  z / sqrt(sum(z^2))
+})
+beta <- 1.5 * Reduce(kronecker, rev(u))
+y <- as.numeric(X_matrix %*% beta)
+
+control <- segre_control(max_iter = 2)
+fit_matrix <- segre_regress(
+  X_matrix, y, rank = 1, input_dims = input_dims,
+  method = "rgn", init = "hosvd", control = control
+)
+fit_array <- segre_regress(
+  X_array, y, rank = 1,
+  method = "rgn", init = "hosvd", control = control
+)
+fit_tensor <- segre_regress(
+  X_tensor, y, rank = 1,
+  method = "rgn", init = "hosvd", control = control
+)
+
+max(abs(coef(fit_matrix) - coef(fit_array)))
+max(abs(coef(fit_matrix) - coef(fit_tensor)))
+```
+
+For tensor responses, the public coefficient layout is
+`c(input_dims, output_dims)`. Predictions have dimensions
+`c(n_new, output_dims)`. This order is independent of the internal permutation
+used to evaluate contractions efficiently.
