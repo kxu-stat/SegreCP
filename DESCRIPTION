@@ -13,7 +13,9 @@ Description: Implements Riemannian gradient descent and Riemannian
     decomposition retractions, provides Composite PCA and HOSVD
     initializations, and accepts both base R arrays and 'rTensor' Tensor
     objects.
-License: file LICENSE
+License: MIT + file LICENSE
+URL: https://github.com/kxu-stat/SegreCP, https://arxiv.org/abs/2510.00569
+BugReports: https://github.com/kxu-stat/SegreCP/issues
 Encoding: UTF-8
 Depends: R (>= 4.2.0)
 Imports:

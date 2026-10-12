@@ -11,37 +11,28 @@ knitr::opts_chunk$set(collapse = TRUE, comment = "#>")
 ```
 
 The paper's real-data task predicts an exporter's 2019 trade-outcome tensor
-using 2018 trade and covariates. This vignette covers three distinct steps:
-obtain the official sources, rebuild and check the analysis inputs, and fit
-the authors' RGD/RGN methods. The runnable package example at the end uses
-synthetic data; building this vignette neither downloads trade data nor runs
-the long experiment. Raw and processed trade values are **not distributed**.
-To run the real-data steps, obtain the **source checkout** of `SegreCP`, which
-contains `reproducibility/real_data/`; that directory is excluded from the
-installed R package and its source tarball.
+from 2018 trade and covariates. This vignette shows how to obtain the official
+sources, prepare the analysis inputs, and refit RGD/RGN. Building it does not
+download data or run the long experiment. The scripts are in the `SegreCP`
+GitHub source checkout under `reproducibility/real_data/`; raw and processed
+trade values are not distributed with the package.
 
-The fixed paper design has 80 exporters, six covariates, a `25 x 21 x 8`
-response tensor per exporter, CP rank three, and five common folds of 16
-exporters. The covariates summarize tariffs, logistics, partner GDP, distance,
-trade-agreement scope, and world demand. Exporter ranking and trade-exposure
-weights use 2018 trade; 2019 trade values supply the response. Within each
-fold, feature standardization and response-channel centering are estimated
-using training exporters only.
+The analysis uses 80 exporters, six covariates, a `25 x 21 x 8` response
+tensor per exporter, CP rank three, and five common folds of 16 exporters.
+The covariates summarize tariffs, logistics, partner GDP, distance,
+trade-agreement scope, and world demand. The registered preprocessing uses
+three-level agreement scope, square-root 2018 trade-value weights, and
+untransformed tariffs. Feature standardization and response centering use
+each training fold only.
 
-The registered preprocessing uses three-level agreement scope,
-square-root trade-value weights, untransformed tariffs, mean/standard-deviation
-feature scaling, and centered (not variance-scaled) responses. The historical
-reporter-candidate screen also requires 2019 WITS tariff availability,
-2018--2019 WDI completeness, and 2018--2019 Gravity coverage. Consequently,
-the selected sample is **not** a strictly 2018-information-only prospective
-design, although the screen does not inspect 2019 trade outcomes. The WITS
-availability filter excluded KOR and MEX in the frozen selection.
+The sample screen also used 2019 WITS tariff availability, excluding KOR and
+MEX. The recorded analysis is therefore not a strictly 2018-information-only
+prospective design; the screen did not use 2019 trade outcomes.
 
 ## Official sources
 
-The download and parsing scripts under `reproducibility/real_data/` in the
-package **source checkout** record the exact requests and validate their
-responses. The upstream routes are:
+The download scripts specify the required years, indicators, and reporter
+requests. The official sources are:
 
 | Input | Pinned source route | Analysis use |
 |:--|:--|:--|
@@ -51,43 +42,22 @@ responses. The upstream routes are:
 | Logistics | [World Bank LPI API](https://api.worldbank.org/v2/country/all/indicator/LP.LPI.OVRL.XQ?date=2018&format=json&per_page=20000) | 2018 logistics proxy |
 | MFN tariffs | [WITS/UNCTAD TRAINS API](https://wits.worldbank.org/) | 2018 importer-by-section tariffs |
 
-The two Gravity files checked by the workflow are the official
-`Gravity_rds_V202211.zip` archive and its extracted
-`Gravity_V202211.rds` member, not two independent datasets. Their exact sizes
-and SHA-256 values are pinned in `reference_source_manifest_sha256.csv`.
-
 The WDI script also requests GDP per capita and population. The WITS script
-resolves reporter codes and obtains the `reported` or `aveestimated` schedule
-specified by official availability metadata. The exact reporter URLs and
-source SHA-256 values are recorded in the local download log and source
-manifest. Access, versions, and API responses can change; a failed source or
-hash check should be investigated rather than replaced with fabricated data.
-Users must follow each provider's access and use terms when downloading data.
-In particular, the [UNCTAD TRAINS terms](https://wits.worldbank.org/data/public/UNCTAD_TermsofUseandDisclaimer.pdf)
-govern the tariff source. The package therefore ships neither the raw tariff
-records nor the derived design and response data; placing only processed values
-in a package would still be a redistribution decision.
-For clarity, its tariff request has the form
-`https://wits.worldbank.org/API/V1/SDMX/V21/datasource/TRN/reporter/{code}/partner/000/product/all/year/2018/datatype/{reported-or-aveestimated}?format=JSON`;
-the script supplies each official reporter code and data type.
+uses official availability information to choose each reporter's tariff
+schedule. The CEPII Gravity archive contains the `Gravity_V202211.rds` file
+used by the analysis. Versions and API responses may change; preparation
+checks the downloaded data against the recorded sources before using them.
+Follow each provider's access terms, particularly the
+[UNCTAD TRAINS terms](https://wits.worldbank.org/data/public/UNCTAD_TermsofUseandDisclaimer.pdf),
+which restrict redistribution without written permission.
 
 ## Rebuild and check the inputs
 
-These commands are printed, not evaluated during vignette building. Start in
-the `SegreCP` **source directory**, identified by its `DESCRIPTION` file and
-`reproducibility/` subdirectory. In the manuscript repository this is
-`software/SegreCP`; in a standalone package-source checkout it is the checkout
-root. The installed package alone does not contain the download scripts.
-
-You need R >= 4.2 with a working C++ toolchain and the R packages `Rcpp`,
-`rTensor`, `data.table`, `digest`, `jsonlite`, and `xml2`. Fresh downloads also
-use command-line `bash`, `curl`, and `unzip`. `knitr` is needed only to rebuild
-this vignette. These data-preparation scripts expect POSIX absolute paths and
-a Unix-like shell (macOS, Linux, or Windows Subsystem for Linux). Choose a
-private absolute path **outside** the source checkout;
-allow several gigabytes of disk space. The first command downloads data from
-the providers and writes to that path, so review their access and use terms
-before running it.
+Run the following commands from the `SegreCP` source checkout. They are shown
+for readers, not executed while building this vignette. You need R >= 4.2, a
+C++ build toolchain, and the R packages listed below. Online preparation also
+uses `bash`, `curl`, and `unzip`. Choose a private absolute path outside the
+checkout on a Unix-like system and allow several gigabytes of disk space.
 
 ```{bash, eval=FALSE}
 # From the SegreCP source directory; edit this private path first.
@@ -98,21 +68,17 @@ Rscript reproducibility/real_data/run.R \
   --prepare --data-dir="$TRADE_DATA_DIR"
 Rscript reproducibility/real_data/run.R \
   --check-inputs --data-dir="$TRADE_DATA_DIR"
-# When only the four processed files remain, this is a weaker, separate check:
-Rscript reproducibility/real_data/run.R \
-  --check-derived --data-dir="$TRADE_DATA_DIR"
 ```
 
-If all 82 pinned official files are already present under the directory at
-their manifest paths, substitute `--prepare --offline` for the online
-preparation command. Offline mode validates the files and rebuilds the needed
-query metadata locally; it does not call the providers. Use a directory
-without the four derived files, because the preparation step refuses to
-overwrite them unless explicitly requested.
+If the official source files are already present under the private directory
+at the paths listed in the source manifest, use `--prepare --offline` instead.
+If a provider no longer serves the recorded version, obtain that version
+through the provider's official route before using offline preparation.
+Preparation does not overwrite existing analysis inputs unless
+`--overwrite-derived` is explicitly requested; a new private directory is
+best for an independent run.
 
-The four selected derived files live under your private `--data-dir`. The
-reader helper below locates their frozen filenames, verifies all four byte
-hashes, and aligns their exporter rows:
+The four prepared inputs are:
 
 | Input | Meaning |
 |:--|:--|
@@ -121,32 +87,20 @@ hashes, and aligns their exporter rows:
 | Fold assignments | Five balanced exporter folds |
 | Preprocessing registry | Registered transformations and feature order |
 
-`--check-inputs` verifies all 82 frozen official
-sources and the four derived byte hashes, plus keys, dimensions, finite
-values, and fold balance. `--check-derived` verifies only the four processed
-files; it does **not** establish that the raw data can be downloaded or
-reprocessed. `--check-structure` can diagnose structurally valid output after
-a provider change, but a structural pass is not an exact frozen-input replay.
-None of these checks reruns an optimizer or reproduces the paper's result
-table. An interrupted preparation never silently overwrites the four derived
-files; see `reproducibility/real_data/README.md` for the explicit recovery
-option.
-
-In an isolated offline test, all 82 stored official source files matched their
-frozen hashes and rebuilding from them reproduced all four derived files
-**byte for byte**. This verifies the recorded source-to-derived workflow from
-the pinned files. It does not establish that every provider still serves the
-same bytes through a new download, particularly the live WITS API.
+`run.R --check-inputs` verifies the recorded source version and the prepared
+inputs, including their dimensions, keys, feature order, and folds. If only
+the four processed files remain, `run.R --check-derived` verifies those
+inputs alone. An offline rebuild from the recorded official files reproduced
+the prepared analysis inputs. New provider downloads may differ, especially
+for the live WITS API.
 
 ## Run the authors' package methods
 
 The source-checkout script `fit_authors_methods.R` fits rank-three RGD and RGN
-through `SegreCP::segre_regress()`. It uses the frozen folds and calculates
-feature scaling and response centering separately on each training fold. Its
-own `--check-inputs` checks the **four processed inputs**, not the 82 raw
-sources checked by `run.R --check-inputs`. A one-sweep smoke run checks wiring;
-the full five-fold, five-repetition command is the accuracy replay. Both
-write outside the package.
+through `SegreCP::segre_regress()`. It uses the common folds and estimates
+feature scaling and response centering from each training fold. Its
+`--check-inputs` option checks the four prepared inputs; the full command
+runs five folds and five timing repetitions. Both write outside the package.
 
 ```{bash, eval=FALSE}
 # From the SegreCP source directory, with SegreCP installed and the four
@@ -164,21 +118,14 @@ Rscript reproducibility/real_data/fit_authors_methods.R \
 
 The full run writes `authors_methods_per_fold.csv`,
 `authors_methods_summary.csv`, and `authors_methods_objective.csv` to the
-chosen output directory, alongside input hashes and the R session record;
-smoke files use the `authors_methods_smoke_` prefix. The runner uses the
-public package API and explicitly records its settings. On the four
-hash-verified processed files, a recorded 50-fit RGD/RGN run matched the
-frozen paper rows to numerical precision (largest absolute test-RMSE
-difference `9.77e-15`; mean test RMSE 2.7003 for RGD and 2.6684 for RGN).
-This **conditional** check does not refit the other five methods or validate
-new provider downloads; the separate offline source-to-derived replay is
-documented above.
-The smoke run only checks execution and dimensions; it is not an accuracy
-result.
+chosen output directory; smoke files use the `authors_methods_smoke_`
+prefix. A local full run matched the recorded RGD/RGN accuracy rows to
+numerical precision, with mean test RMSE 2.7003 for RGD and 2.6684 for RGN.
+The smoke run is only a quick execution check. Elapsed times depend on the
+machine.
 
-To visualize empirical convergence after the full run, read the private
-objective file. The plot uses the observed training objective, not an
-unobservable estimation error or a claim of global convergence.
+To visualize empirical convergence after the full run, plot the observed
+training objective from the private result file.
 
 ```{r real-objective-plot, eval=FALSE}
 result_dir <- "/absolute/path/to/private-trade-work/authors-results"
@@ -199,13 +146,9 @@ legend("topright", c("RGD", "RGN"), col = c("#1f77b4", "#d95f02"),
 
 ## Work with one prepared fold
 
-The next code exposes one fold of the RGN analysis rather than hiding its data
-transforms in the runner. It uses the same author-method controls but is **not**
-the five-fold, five-repetition paper protocol. Run it from the `SegreCP`
-source directory, and set `trade_data_dir` to the private directory used above.
-The reader checks the frozen processed inputs before returning aligned `X`,
-`Y`, and fold IDs. A rank-three fit on the full response can take substantial
-time, so this chunk is not evaluated during package checks.
+The following example shows the transformations and one RGN fit for a single
+fold. Run it from the source checkout after preparing the private data. It is
+not the five-fold paper protocol and is not evaluated during package checks.
 
 ```{r real-fold, eval=FALSE}
 source("reproducibility/real_data/read_prepared_trade_data.R")
@@ -243,23 +186,9 @@ prediction <- predict(fit, X_test)
 sqrt(mean((as.numeric(prediction) - as.numeric(Y_test))^2))
 ```
 
-The frozen paper comparison additionally fixes settings and 3/5/10-update
-checkpoints for seven methods. The other five estimators are **not exported by
-`SegreCP`**; their code belongs to repository-only comparison scripts. The
-old seven-method driver also depends on legacy files in the larger manuscript
-repository, so there is currently no claim of a standalone seven-method
-raw-source-to-table replay from this package checkout. The supported
-standalone route here is official-source preparation, input checks, and an
-RGD/RGN refit through the package API. The frozen seven-method table recorded
-five-fold mean test RMSE of 2.7003 for RGD
-and 2.6684 for RGN; these two rows have been independently replayed on the
-four hash-verified processed inputs. Wall-clock times are machine-dependent,
-so compare methods under one documented timing protocol rather than expecting
-identical seconds across computers.
-
-The rebuttal simulation vignettes bundled with the package address different,
-synthetic experiments: `rebuttal-regression-reproducibility` and
-`rebuttal-initialization-convergence`.
+The saved seven-method comparison uses a separate benchmark. This checkout
+provides fresh RGD/RGN fits for the trade analysis; its synthetic simulation
+results appear in the other numerical-results vignettes.
 
 ## Minimal installed-package example
 

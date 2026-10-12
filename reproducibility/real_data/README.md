@@ -1,192 +1,102 @@
-# Reproduce the 2018–2019 trade tensor analysis
+# Reproduce the trade-data analysis
 
-This source-checkout-only directory reconstructs the paper's rank-three,
-five-fold trade analysis: six 2018 exporter-level predictors are used to
-predict each exporter's 2019 trade tensor. It contains download and
-preprocessing code, source URLs, experiment settings, and SHA-256 references,
-but no BACI, Gravity, WDI, WITS/TRAINS, or processed numerical data. The R
-package build excludes the entire `reproducibility/` directory.
+This directory contains the data preparation and fitting scripts for the
+paper's 2018-to-2019 trade analysis. Six exporter-level features from 2018
+predict a 2019 response tensor. The scripts belong to the GitHub source
+checkout, not the installed R package. Downloaded and processed data stay in
+a private directory outside the checkout; neither is distributed here.
 
-The frozen specification uses ordered trade-agreement scope, square-root 2018
-trade weights, untransformed tariffs, and training-fold response centering.
-Historical artifact identifiers remain inside the manifests and scripts to
-preserve exact byte-level provenance; they are not user-facing method options.
+The analysis uses 80 exporters, 25 importers, 21 HS sections, eight response
+channels, CP rank three, and five common folds of 16 exporters. The registered
+preprocessing uses three-level trade-agreement scope, square-root 2018 trade
+weights, untransformed tariffs, and training-fold feature standardization and
+response centering.
 
-For a GitHub release, publish the `software/SegreCP/` source tree only.
-The parent research workspace contains large restricted raw and processed
-data and must not be included in that repository.
+## Data sources
 
-## Run locally
+| Input | Official source |
+|:--|:--|
+| Trade values and quantities | [CEPII BACI HS17 V202601](https://www.cepii.fr/DATA_DOWNLOAD/baci/data/BACI_HS17_V202601.zip) |
+| Bilateral covariates | [CEPII Gravity V202211](https://www.cepii.fr/DATA_DOWNLOAD/gravity/data/Gravity_rds_V202211.zip) |
+| GDP, population, and logistics | [World Bank WDI and LPI API](https://api.worldbank.org/v2/) |
+| MFN tariffs | [WITS / UNCTAD TRAINS API](https://wits.worldbank.org/) |
 
-Use a private, absolute data path outside the `SegreCP` package checkout.
-The download and preprocessing steps may need several gigabytes of disk space.
-From the package source directory:
+The scripts specify the indicator, year, and reporter requests and check the
+downloaded data against the versions used for the analysis. Provider access
+and responses may change. If a download is rejected or differs from the
+recorded version, obtain the versioned files through the provider's official
+route and use the offline preparation command below. The CEPII Gravity archive
+contains the `Gravity_V202211.rds` input used by the scripts.
+
+Read the [UNCTAD TRAINS terms](https://wits.worldbank.org/data/public/UNCTAD_TermsofUseandDisclaimer.pdf)
+before obtaining tariffs. They restrict redistribution without written
+permission; this repository provides code and source links, not tariff values.
+
+## Prepare the analysis inputs
+
+Start in the `SegreCP` source checkout. You need R >= 4.2, a C++ build
+toolchain, and the R packages `Rcpp`, `rTensor`, `data.table`, `digest`,
+`jsonlite`, and `xml2`. Online preparation also uses `bash`, `curl`, and
+`unzip`. The scripts expect a Unix-like shell and an absolute data path
+outside the checkout. Allow several gigabytes of disk space.
 
 ```sh
+Rscript -e 'install.packages(c("Rcpp", "rTensor", "data.table", "digest", "jsonlite", "xml2"), repos = "https://cloud.r-project.org")'
+R CMD INSTALL .
+TRADE_DATA_DIR=/absolute/path/to/private-trade-work
 Rscript reproducibility/real_data/run.R \
-  --prepare --data-dir=/absolute/path/to/private-trade-work
+  --prepare --data-dir="$TRADE_DATA_DIR"
+Rscript reproducibility/real_data/run.R \
+  --check-inputs --data-dir="$TRADE_DATA_DIR"
 ```
 
-For a fully downloaded private source tree, the same preprocessing can run
-without network access:
+If the official source files are already present under the private directory
+at the paths listed in the source manifest, replace `--prepare` with
+`--prepare --offline`. Preparation does not overwrite existing analysis inputs
+unless `--overwrite-derived` is explicitly requested; use a fresh directory
+for an independent run. `--check-inputs` checks both the source files and the
+four analysis inputs. If only the processed files remain, `--check-derived`
+checks those inputs alone.
 
-```sh
-Rscript reproducibility/real_data/run.R \
-  --prepare --offline --data-dir=/absolute/path/to/private-trade-work
-```
-
-Inspect an existing private run with:
-
-```sh
-Rscript reproducibility/real_data/run.R \
-  --check-inputs --data-dir=/absolute/path/to/private-trade-work
-```
-
-`--check-inputs` requires all 82 frozen official source files to match the
-bundled source hashes and all four derived artifacts to match the frozen
-byte hashes. `--check-derived` checks only the four processed files against
-their frozen byte hashes. It can verify an existing processed bundle when
-the large raw files are unavailable, but it does not establish that the
-official source data can still be rebuilt. `--check-structure` checks source
-hashes and derived dimensions,
-keys, finite values, and fold balance while reporting any derived byte
-differences. A structural pass alone does not establish an exact frozen replay.
-
-Requirements: R with `data.table`, `digest`, `jsonlite`, and `xml2`.
-Fresh downloads additionally require `bash`, `curl`, and `unzip`. The
-real-data command-line workflow currently expects POSIX absolute paths and a
-Unix-like shell (macOS, Linux, or Windows Subsystem for Linux); the installed
-R package's tensor API is separate from these scripts. The
-historical run used R 4.4.3 on Apple arm64; serialization and floating point
-results may vary across environments. If a provider has changed a payload,
-`--prepare` stops before data transformation and reports the first divergent
-source paths.
-
-## Official download paths and integrity
-
-The complete per-file URLs and frozen SHA-256 values are in
-`reference_source_manifest_sha256.csv`. The fetch scripts use:
-
-| Source | Version or endpoint |
-|---|---|
-| CEPII BACI HS2017 | [`BACI_HS17_V202601.zip`](https://www.cepii.fr/DATA_DOWNLOAD/baci/data/BACI_HS17_V202601.zip) |
-| CEPII Gravity | [`Gravity_rds_V202211.zip`](https://www.cepii.fr/DATA_DOWNLOAD/gravity/data/Gravity_rds_V202211.zip) |
-| World Bank WDI and LPI | [World Bank API](https://api.worldbank.org/v2/) with the indicator, year, and query parameters recorded in the manifest |
-| WITS / UNCTAD TRAINS | [WITS API](https://wits.worldbank.org/API/V1/wits/datasource/trn/country/ALL); exact reporter/year/type URLs are recorded in the manifest |
-
-The CEPII archive hashes are checked before extraction. The run then checks
-the frozen content of the remaining official inputs. WITS response JSON has
-a generated `header.prepared` timestamp; the reference content hash
-normalizes that field only. Other source files require exact byte and size
-matches. The official Gravity V202211 ZIP and its extracted
-`Gravity_V202211.rds` member were freshly recovered from CEPII and matched
-the frozen reference. Their exact sizes and SHA-256 values are in the source
-manifest. They are
-two files for one source release, not two independently sourced datasets.
-Availability and access through provider URLs can change; a fresh full
-download of all sources, especially WITS API responses, has not been
-revalidated as part of this package split. A provider may reject an automated
-request. Follow
-the provider's official access path if that occurs, place the same versioned
-files in the private data directory, and run `--prepare --offline`.
-
-Read the [WITS / UNCTAD TRAINS terms](https://wits.worldbank.org/data/public/UNCTAD_TermsofUseandDisclaimer.pdf)
-before obtaining tariff data. They restrict redistribution of the data or
-parts of it without written permission. This workflow has each user obtain
-the official inputs locally and does not redistribute downloaded or derived
-tariff values.
-
-## Outputs
-
-The private data directory receives `source_archives/`, `raw_official/`,
-`metadata/`, `processed_official/`, and `analysis_official/`. The four
-analysis inputs are the response tensor, six-feature exporter design, common
-five-fold assignments, and preprocessing registry. Their exact relative paths
-and hashes are in `reference_derived_sha256.csv`. A reader need not navigate
-those paths manually:
+The four analysis inputs are the response tensor, six-feature exporter design,
+fold assignments, and preprocessing registry. This helper loads and aligns
+them:
 
 ```r
-# From the SegreCP source directory, after preparing the private data.
 source("reproducibility/real_data/read_prepared_trade_data.R")
 trade <- read_prepared_trade_data("/absolute/path/to/private-trade-work")
-dim(trade$X)   # 80 exporters x 6 features
-dim(trade$Y)   # 80 x 25 x 21 x 8 response tensor
-table(trade$fold)  # 16 exporters in each of five folds
+dim(trade$X)       # 80 x 6
+dim(trade$Y)       # 80 x 25 x 21 x 8
+table(trade$fold)  # 16 exporters per fold
 ```
 
-The reader verifies the four frozen processed-file hashes, the registered
-preprocessing choice, shapes, keys, feature order, and row alignment. It is
-specific to the paper's prepared trade data; `SegreCP::segre_regress()` itself
-accepts general user-supplied tensors and does not require these files. The
-reader does **not** validate or download the 82 raw source files; use
-`run.R --check-inputs` for that stronger provenance check.
+## Refit RGD and RGN
 
-The output tensor has 80 exporters, 25 importer partners, 21 HS sections,
-and eight response channels. The exporter-level design has six features. Fold
-standardization and response centering belong to the later fitting stage.
-The historical scripts and settings are reproduced here; the `reference_derived_sha256.csv`
-file permits an exact artifact comparison.
-
-`--prepare` refuses to overwrite any of the four selected derived inputs
-by default. After an interrupted run, use a fresh private directory or
-inspect the existing files and explicitly pass `--overwrite-derived` to
-rebuild them. Source downloads are checked before they replace any existing
-source file.
-
-The download and tensor-building code was adapted from the frozen official
-2018-to-2019 analysis. Path handling now points to the private
-`--data-dir`; the historical design and folds are rebuilt in a compact
-script. In an isolated offline rebuild, all 82 official source files passed
-their frozen content checks and all four newly generated analysis inputs
-matched the historical files byte for byte and by SHA-256. This establishes
-the local frozen-source-to-input transformation, but not that every provider
-will still deliver the same file to a new user. Offline preparation rebuilds
-the reporter-query metadata locally from the checked raw sources; no
-pre-existing metadata files are required.
-
-## Refit the authors' methods
-
-Install `SegreCP` first, then use the four frozen processed inputs in a
-private data directory:
+The fitting script uses the registered folds and estimates the feature and
+response transformations separately on each training fold. Run a quick check
+before the full five-fold analysis:
 
 ```sh
+TRADE_DATA_DIR=/absolute/path/to/private-trade-work
 Rscript reproducibility/real_data/fit_authors_methods.R \
-  --data-dir=/absolute/path/to/private-trade-work --check-inputs
-
+  --data-dir="$TRADE_DATA_DIR" --check-inputs
 Rscript reproducibility/real_data/fit_authors_methods.R \
-  --data-dir=/absolute/path/to/private-trade-work \
-  --smoke --output-dir=/absolute/path/to/private-smoke-output
-
+  --data-dir="$TRADE_DATA_DIR" --smoke \
+  --output-dir="$TRADE_DATA_DIR/authors-smoke"
 Rscript reproducibility/real_data/fit_authors_methods.R \
-  --data-dir=/absolute/path/to/private-trade-work \
-  --folds=1,2,3,4,5 --repetitions=5 \
-  --output-dir=/absolute/path/to/private-full-output
+  --data-dir="$TRADE_DATA_DIR" --folds=1,2,3,4,5 --repetitions=5 \
+  --output-dir="$TRADE_DATA_DIR/authors-results"
 ```
 
-The runner verifies the four input byte hashes, uses the common folds and
-training-fold transformations, and fits rank-3 RGD and RGN through the
-installed public package. `--smoke` runs one fold for one iteration and
-is only a wiring check. The full command runs 5 folds x 5 timing repetitions
-x 2 methods, saving per-fold accuracy, summaries, objective paths, input
-hashes, and the R session. Accuracy is repeated on the same folds; timing
-can vary by machine. A local 50-fit check agreed with the frozen
-RGD/RGN RMSE and R-squared rows to a maximum absolute difference of
-1.3e-14. Together with the byte-identical source-to-input rebuild above,
-this validates the authors' two-method chain in stages. It is not a fresh
-seven-method raw-source-to-table replay.
+The full command fits rank-three RGD and RGN through the installed `SegreCP`
+API. It writes per-fold accuracy, summaries, objective paths, and the R
+session to the chosen private output directory. The smoke run is an execution
+check, not an accuracy result. A local full run reproduced the recorded
+RGD/RGN test-RMSE and R-squared rows to numerical precision; elapsed times
+depend on the machine.
 
-## Scope of the historical result
-
-These scripts preserve the frozen trade-analysis sample selection and
-preprocessing. The first WITS reporter selection uses **2019 tariff
-availability** to pre-screen importers before the 2018 analysis; that screen
-excludes KOR and MEX. Thus this exact frozen replay is not a strictly
-2018-information-only prospective design. A revised 2018-only selection
-would require a separately labeled sample, refit, and numerical table.
-
-This directory rebuilds data inputs. It does not recreate the historical
-seven-method table: that driver used older algorithm code outside this
-public package. The SegreCP package exposes the current RGD/RGN and
-initialization methods, and any new comparison table must be validated
-against those public implementations before it is called a paper
-reproduction.
+The paper's selected sample used 2019 WITS tariff availability when screening
+reporters, excluding KOR and MEX. Thus the recorded analysis is not a
+strictly 2018-information-only prospective design. The scripts refit RGD/RGN
+on that sample; the separate seven-method table is available as saved
+experiment records in the package's numerical-results vignette.

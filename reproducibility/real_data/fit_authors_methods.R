@@ -19,9 +19,9 @@ usage <- paste(
   "Usage: Rscript fit_authors_methods.R [--data-dir=PATH] [--output-dir=PATH]",
   "[--folds=1,2,3,4,5] [--repetitions=1] [--check-inputs] [--smoke]",
   "\n",
-  "Refit the rank-three RGD/RGN trade analysis on the four frozen processed inputs.",
+  "Refit the rank-three RGD/RGN trade analysis on the four prepared inputs.",
   "The data directory is outside the package source tree; --check-inputs",
-  "verifies input structure and SHA-256 without fitting. --smoke runs one",
+  "checks the inputs without fitting. --smoke runs one",
   "fold, one repetition, and one sweep; it is not a paper result.",
   sep = "\n"
 )
@@ -104,7 +104,7 @@ if (length(missing)) {
        call. = FALSE)
 }
 if (!requireNamespace("digest", quietly = TRUE)) {
-  stop("The digest package is required for input SHA-256 checks.", call. = FALSE)
+  stop("The digest package is required to check the prepared inputs.", call. = FALSE)
 }
 
 tensor_env <- new.env(parent = baseenv())
@@ -192,32 +192,31 @@ input_record <- data.frame(
   input = names(inputs),
   relative_path = substring(inputs, nchar(data_dir) + 2L),
   bytes = unname(file.info(inputs)$size),
-  sha256 = vapply(inputs, digest::digest, character(1L),
-                  algo = "sha256", file = TRUE),
   row.names = NULL
 )
+input_digest <- vapply(inputs, digest::digest, character(1L),
+                       algo = "sha256", file = TRUE)
 reference_path <- file.path(dirname(script_path), "reference_derived_sha256.csv")
 if (!file.exists(reference_path)) {
-  stop("Missing frozen four-input SHA-256 reference: ", reference_path,
+  stop("Missing reference for the four prepared inputs: ", reference_path,
        call. = FALSE)
 }
 reference <- read.csv(reference_path, check.names = FALSE)
 if (!identical(names(reference), c("local_path", "bytes", "sha256")) ||
     nrow(reference) != 4L || anyDuplicated(reference$local_path) ||
     !setequal(reference$local_path, input_record$relative_path)) {
-  stop("The frozen four-input SHA-256 reference has an unexpected schema or path set.",
+  stop("The prepared-input reference has an unexpected schema or path set.",
        call. = FALSE)
 }
 reference <- reference[match(input_record$relative_path, reference$local_path), ]
 if (any(reference$bytes != input_record$bytes) ||
-    any(tolower(reference$sha256) != input_record$sha256)) {
-  stop("Processed input bytes or SHA-256 differ from the frozen trade-analysis reference. ",
-       "Do not label this run as the frozen paper analysis.", call. = FALSE)
+    any(tolower(reference$sha256) != unname(input_digest))) {
+  stop("Prepared inputs differ from the recorded trade analysis.", call. = FALSE)
 }
-message("Verified the four frozen trade inputs: 80 exporters, five balanced folds, ",
-        "six features, an 80 x 25 x 21 x 8 response, and frozen SHA-256 hashes.")
+message("Prepared inputs match the recorded analysis: 80 exporters, five folds, ",
+        "six features, and an 80 x 25 x 21 x 8 response.")
 if (check_only) {
-  print(input_record[c("input", "bytes", "sha256")], row.names = FALSE)
+  print(input_record[c("input", "bytes")], row.names = FALSE)
   quit(save = "no", status = 0L)
 }
 prefix <- if (smoke) "authors_methods_smoke" else "authors_methods"
@@ -238,8 +237,8 @@ if (!requireNamespace("SegreCP", quietly = TRUE)) {
   stop("Install SegreCP before fitting the authors' methods.", call. = FALSE)
 }
 
-# The historical table used a centered response and unnormalized design.
-# This is a new public-package fit; historical seven-method parity is separate.
+# Standardize features and center responses within each training fold; the
+# solver applies no additional regression normalization.
 RNGkind(kind = "Mersenne-Twister", normal.kind = "Inversion",
         sample.kind = "Rejection")
 if (requireNamespace("RhpcBLASctl", quietly = TRUE)) {

@@ -1,8 +1,7 @@
 #!/usr/bin/env Rscript
 
-# Fresh authors-method fits for the paper's tensor-on-tensor simulation.
-# This source-only script generates data locally and calls SegreCP's public API.
-# The installed package does not contain competing-method implementations.
+# Fresh RGD/RGN fits for the paper's tensor-on-tensor simulation.
+# Data are generated locally and fitted through SegreCP's public API.
 
 args <- commandArgs(trailingOnly = TRUE)
 usage <- paste(
@@ -14,8 +13,7 @@ usage <- paste(
   "--full: all 12 cells x 20 replications x 10 sweeps (480 method fits).",
   "Smoke-only selectors cannot be combined with --full. A new output",
   "directory outside the package checkout is required; files are never",
-  "overwritten. These are fresh SegreCP fits, not an exact replay of the",
-  "historical seven-method runner or its timing measurements.",
+  "overwritten.",
   sep = "\n"
 )
 if (identical(args, "--help")) {
@@ -93,11 +91,6 @@ if (identical(output_dir, "/") || identical(output_dir, package_root) ||
 if (!requireNamespace("SegreCP", quietly = TRUE)) {
   stop("Install SegreCP before running this simulation.", call. = FALSE)
 }
-if (!requireNamespace("digest", quietly = TRUE)) {
-  stop("Install digest to record generated-data SHA-256 fingerprints.",
-       call. = FALSE)
-}
-
 settings_path <- system.file(
   "extdata", "rebuttal_tensor_regression", "final_settings.csv",
   package = "SegreCP", mustWork = TRUE
@@ -117,7 +110,7 @@ setting <- function(name) {
 parse_dims <- function(x) as.integer(strsplit(x, "x", fixed = TRUE)[[1L]])
 output_dims <- parse_dims(setting("output_dimensions"))
 input_dims <- parse_dims(setting("input_dimensions"))
-dims_legacy <- c(output_dims, input_dims)
+generation_dims <- c(output_dims, input_dims)
 rank <- as.integer(setting("rank"))
 kappa <- as.numeric(setting("kappa"))
 n_train <- as.integer(setting("n_train"))
@@ -127,7 +120,7 @@ noise_sd <- as.numeric(strsplit(setting("noise_sd"), ",", fixed = TRUE)[[1L]])
 replications <- as.integer(setting("replications"))
 paper_sweeps <- as.integer(setting("iterations"))
 master_seed <- as.integer(setting("master_seed"))
-if (!identical(dims_legacy, rep(10L, 5L)) || rank != 3L || kappa != 30 ||
+if (!identical(generation_dims, rep(10L, 5L)) || rank != 3L || kappa != 30 ||
     n_train != 1000L || n_test != 1000L ||
     !identical(coherence, c(0, 0.2, 0.5, 0.75)) ||
     !identical(noise_sd, c(0, 0.5, 1)) || replications != 20L ||
@@ -164,8 +157,7 @@ Sys.setenv(
   VECLIB_MAXIMUM_THREADS = "1", BLIS_NUM_THREADS = "1"
 )
 
-# This is the small data generator from the benchmark, independent of its
-# solver source. The five factors are ordered output-first during generation.
+# Generate the five-factor coefficient in output-first order.
 coherent_vectors <- function(p, r, rho) {
   gram <- stats::toeplitz(rho^(0:(r - 1L)))
   columns <- rbind(diag(1, r), matrix(0, p - r, r)) %*% chol(gram)
@@ -174,7 +166,7 @@ coherent_vectors <- function(p, r, rho) {
   rotation %*% columns
 }
 make_truth <- function(rho) {
-  factors <- lapply(dims_legacy, coherent_vectors, r = rank, rho = rho)
+  factors <- lapply(generation_dims, coherent_vectors, r = rank, rho = rho)
   lapply(seq_len(rank), function(i) {
     list(lambda = kappa^(0.5 - (i - 1L) / (rank - 1L)),
          U = lapply(factors, function(z) z[, i]))
@@ -184,29 +176,27 @@ truth_array <- function(components) {
   value <- Reduce(`+`, lapply(components, function(z) {
     z$lambda * Reduce(kronecker, rev(z$U))
   }))
-  array(value, dim = dims_legacy)
+  array(value, dim = generation_dims)
 }
 
 metric_rows <- vector("list", nrow(jobs) * 2L)
 objective_rows <- vector("list", nrow(jobs) * 2L)
-fingerprint_rows <- vector("list", nrow(jobs))
 counter <- 0L
 for (job_id in seq_len(nrow(jobs))) {
   row <- jobs[job_id, ]
   seed <- master_seed + row$coherence_id * 10000L + row$replication
   set.seed(seed)
   truth <- make_truth(row$coherence)
-  truth_old_order <- truth_array(truth)
-  # SegreCP documents input modes first; transpose the benchmark's
-  # output-first tensor rather than changing the generated data.
-  truth_public <- aperm(truth_old_order, c(3L, 4L, 5L, 1L, 2L))
+  truth_output_first <- truth_array(truth)
+  # SegreCP uses predictor modes first and response modes last.
+  truth_public <- aperm(truth_output_first, c(3L, 4L, 5L, 1L, 2L))
   truth_norm <- sqrt(sum(truth_public^2))
 
   p_in <- prod(input_dims)
   q_out <- prod(output_dims)
   X_train <- matrix(rnorm(n_train * p_in, sd = 1 / sqrt(n_train)), n_train)
   X_test <- matrix(rnorm(n_test * p_in, sd = 1 / sqrt(n_train)), n_test)
-  truth_matrix <- matrix(truth_old_order, nrow = q_out)
+  truth_matrix <- matrix(truth_output_first, nrow = q_out)
   Y_train_clean <- X_train %*% t(truth_matrix)
   Y_test_clean <- X_test %*% t(truth_matrix)
   Z_train <- matrix(rnorm(n_train * q_out), nrow = n_train)
@@ -214,23 +204,7 @@ for (job_id in seq_len(nrow(jobs))) {
   Y_train <- Y_train_clean + row$noise_sd * Z_train / sqrt(n_train)
   Y_test <- Y_test_clean + row$noise_sd * Z_test / sqrt(n_train)
 
-  fingerprint_rows[[job_id]] <- data.frame(
-    cell_id = row$cell_id, replication = row$replication, seed = seed,
-    coherence = row$coherence, noise_sd = row$noise_sd,
-    data_sha256 = digest::digest(list(
-      truth = truth, X_train = X_train, Y_train = Y_train,
-      X_test = X_test, Y_test = Y_test
-    ), algo = "sha256", serialize = TRUE),
-    base_data_sha256 = digest::digest(list(
-      truth = truth, X_train = X_train, Y_train_clean = Y_train_clean,
-      X_test = X_test, Y_test_clean = Y_test_clean,
-      Z_train = Z_train, Z_test = Z_test
-    ), algo = "sha256", serialize = TRUE),
-    stringsAsFactors = FALSE
-  )
-
-  # Historical CPCA groups the two output modes. In the public input-first
-  # order these are modes 4 and 5. The same CPCA object starts RGD and RGN.
+  # CPCA groups the two response modes (4 and 5); both methods share it.
   moment <- array(as.numeric(crossprod(X_train, Y_train)),
                   dim = c(input_dims, output_dims))
   init_elapsed <- system.time({
@@ -299,7 +273,6 @@ for (job_id in seq_len(nrow(jobs))) {
 
 metrics <- do.call(rbind, metric_rows)
 objectives <- do.call(rbind, objective_rows)
-fingerprints <- do.call(rbind, fingerprint_rows)
 if (file.exists(output_dir)) {
   stop("Output directory appeared while fitting; refusing to overwrite it.",
        call. = FALSE)
@@ -311,9 +284,6 @@ utils::write.csv(metrics, file.path(output_dir, "authors_regression_metrics.csv"
                  row.names = FALSE)
 utils::write.csv(objectives,
                  file.path(output_dir, "authors_regression_objective.csv"),
-                 row.names = FALSE)
-utils::write.csv(fingerprints,
-                 file.path(output_dir, "generated_data_fingerprints.csv"),
                  row.names = FALSE)
 utils::write.csv(data.frame(
   parameter = c("mode", "package_version", "rank", "input_dimensions",

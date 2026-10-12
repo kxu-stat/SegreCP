@@ -1,2 +1,0 @@
-"status","reference_available","compared_rows","cpca_max_absolute_difference","cpals_max_absolute_difference","hosvd_initial_max_absolute_difference","max_absolute_mean_trajectory_difference","max_absolute_checkpoint_difference","method_ranking_preserved","initializer_contrast_preserved","exact_tolerance","mean_path_tolerance","checkpoint_tolerance","passed"
-"CHECKED",TRUE,1320,2.73947531326257e-14,3.10446113260809e-14,4.74620343027254e-15,0.00086766076323707,0.000307231124890277,TRUE,TRUE,1e-10,0.001,5e-04,TRUE

@@ -231,16 +231,15 @@ check_derived <- function(strict_hash = TRUE) {
   )
   exact <- current == frozen$sha256 &
     as.numeric(file.info(target)$size) == frozen$bytes
-  message("Frozen derived byte hashes: ", sum(exact), "/", length(exact),
-          " match")
+  message("Prepared inputs matching the recorded analysis: ",
+          sum(exact), "/", length(exact))
   if (any(!exact)) {
     changed <- paste(frozen$local_path[!exact], collapse = ", ")
     if (strict_hash) {
-      stop("Derived trade-analysis byte hashes differ from the frozen results: ", changed,
-           ". Use --check-structure to inspect dimensions without claiming ",
-           "exact artifact reproduction.")
+      stop("Prepared trade inputs differ from the recorded analysis: ", changed,
+           ". Use --check-structure to inspect their contents.")
     }
-    message("Changed byte hashes: ", changed)
+    message("Inputs with changed content: ", changed)
   }
   invisible(TRUE)
 }

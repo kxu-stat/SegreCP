@@ -25,7 +25,6 @@ palette <- c(
 )
 method_lty <- c("CP-ALS" = 3, "RGD" = 2, "RGN" = 1)
 method_pch <- c("CP-ALS" = 15, "RGD" = 17, "RGN" = 16)
-method_pch_open <- c("CP-ALS" = 0, "RGD" = 2, "RGN" = 1)
 
 locate_extdata <- function() {
   installed <- system.file(
@@ -54,22 +53,19 @@ read_artifact <- function(section, file) {
 
 extdata_root <- locate_extdata()
 
-decomp_legacy <- read_artifact("decomp_ref", "trajectory_raw.csv")
-decomp_legacy_init <- read_artifact(
+decomp_results <- read_artifact("decomp_ref", "trajectory_raw.csv")
+decomp_initialization <- read_artifact(
   "decomp_ref", "initialization_summary.csv"
 )
-decomp_legacy_checks <- read_artifact(
+decomp_checks <- read_artifact(
   "decomp_ref", "validation_checks.csv"
 )
 
-decomp_package <- read_artifact(
-  "decomp_pkg", "trajectory_raw.csv"
+objective_results <- read_artifact(
+  "decomp_objective", "trajectory_raw.csv"
 )
-decomp_package_checks <- read_artifact(
-  "decomp_pkg", "validation_checks.csv"
-)
-decomp_parity <- read_artifact(
-  "decomp_pkg", "legacy_reference_parity.csv"
+objective_checks <- read_artifact(
+  "decomp_objective", "validation_checks.csv"
 )
 
 regression_init <- read_artifact(
@@ -79,12 +75,12 @@ regression_checks <- read_artifact(
   "reg_ref", "validation_checks.csv"
 )
 
-legacy_pass_col <- if ("passed" %in% names(decomp_legacy_checks)) {
+decomp_pass_col <- if ("passed" %in% names(decomp_checks)) {
   "passed"
 } else {
   "pass"
 }
-package_pass_col <- if ("passed" %in% names(decomp_package_checks)) {
+objective_pass_col <- if ("passed" %in% names(objective_checks)) {
   "passed"
 } else {
   "pass"
@@ -96,15 +92,15 @@ regression_pass_col <- if ("passed" %in% names(regression_checks)) {
 }
 
 stopifnot(
-  all(decomp_legacy_checks[[legacy_pass_col]]),
-  all(decomp_package_checks[[package_pass_col]]),
+  all(decomp_checks[[decomp_pass_col]]),
+  all(objective_checks[[objective_pass_col]]),
   all(regression_checks[[regression_pass_col]]),
-  nrow(decomp_legacy) == 20L * 2L * 3L * 11L,
-  nrow(decomp_package) == 20L * 2L * 3L * 11L,
-  identical(sort(unique(decomp_legacy$iteration)), 0:10),
-  identical(sort(unique(decomp_package$iteration)), 0:10),
-  all(c("CPCA", "HOSVD") %in% decomp_legacy$initialization),
-  all(c("CP-ALS", "RGD", "RGN") %in% decomp_legacy$method)
+  nrow(decomp_results) == 20L * 2L * 3L * 11L,
+  nrow(objective_results) == 20L * 2L * 3L * 11L,
+  identical(sort(unique(decomp_results$iteration)), 0:10),
+  identical(sort(unique(objective_results$iteration)), 0:10),
+  all(c("CPCA", "HOSVD") %in% decomp_results$initialization),
+  all(c("CP-ALS", "RGD", "RGN") %in% decomp_results$method)
 )
 
 mean_trajectory <- function(x) {
@@ -115,18 +111,17 @@ mean_trajectory <- function(x) {
   )
 }
 
-legacy_mean <- mean_trajectory(decomp_legacy)
-package_mean <- mean_trajectory(decomp_package)
+decomp_mean <- mean_trajectory(decomp_results)
 
 stopifnot(
-  "objective" %in% names(decomp_package),
-  all(is.finite(decomp_package$objective))
+  "objective" %in% names(objective_results),
+  all(is.finite(objective_results$objective))
 )
-objective_raw <- decomp_package[order(
-  decomp_package$replication,
-  decomp_package$initialization,
-  decomp_package$method,
-  decomp_package$iteration
+objective_raw <- objective_results[order(
+  objective_results$replication,
+  objective_results$initialization,
+  objective_results$method,
+  objective_results$iteration
 ), ]
 objective_key <- interaction(
   objective_raw$replication,
@@ -154,7 +149,7 @@ objective_path_stats <- do.call(rbind, lapply(
   }
 ))
 
-oracle_source <- decomp_package
+oracle_source <- objective_results
 oracle_key <- interaction(
   oracle_source$replication,
   oracle_source$initialization,
@@ -198,21 +193,9 @@ oracle_summary <- do.call(rbind, lapply(
 rownames(oracle_summary) <- NULL
 ```
 
-This vignette turns the rebuttal-stage initialization tables into visual,
-machine-checked diagnostics. It reads the frozen artifacts shipped with the
-package; it does not rerun the 20-replication simulations while the package is
-built. The experimental unit is one replication, and every displayed mean is
-over 20 paired replications.
-
-This vignette is evidence reconstruction, not an additional estimator API.
-CP-ALS appears only as frozen experiment output. The installed package code and
-`inst/scripts/ours_methods.R` implement only RGD, RGN, and initialization; the
-current comparison entry point is kept outside the built package.
-
-The scope is the CPCA-versus-HOSVD ablation newly reported in the rebuttal.
-Although the historical regression run identifier came from the same
-simulation workflow as an earlier figure, this vignette neither reads nor
-publishes that figure's image or plotting output.
+This vignette plots the recorded CPCA-versus-HOSVD experiment. Each mean uses
+20 paired replications. To generate new data and refit RGD/RGN under the same
+design, use the [simulation scripts](https://github.com/kxu-stat/SegreCP/blob/main/reproducibility/simulations/README.md).
 
 The decomposition experiment uses dimensions `60 x 30 x 30`, CP rank 3,
 condition number 30, coherence 0.5, noise standard deviation 1, and 10 complete
@@ -230,10 +213,10 @@ frozen 95% bootstrap intervals.
 ```{r initialization-sensitivity, echo=FALSE, fig.width=7.6, fig.height=4.8, fig.cap="Initial relative Frobenius error under CPCA and HOSVD. Intervals are frozen 95% bootstrap intervals over 20 paired replications; comparisons are within rows."}
 decomp_initial_plot <- data.frame(
   setting = "Decomposition (0.5, 1)",
-  initialization = decomp_legacy_init$initialization,
-  mean = decomp_legacy_init$initial_error_mean,
-  lower = decomp_legacy_init$ci_lower,
-  upper = decomp_legacy_init$ci_upper,
+  initialization = decomp_initialization$initialization,
+  mean = decomp_initialization$initial_error_mean,
+  lower = decomp_initialization$ci_lower,
+  upper = decomp_initialization$ci_upper,
   stringsAsFactors = FALSE
 )
 
@@ -313,15 +296,11 @@ terminal error.
 
 ## Full decomposition trajectories
 
-The next figure overlays the rebuttal-stage trajectory (solid lines and filled
-points) and the package compatibility rerun (dashed lines and open points).
-Color, line type, and point shape jointly identify the methods and sources.
+The next figure shows mean relative tensor error through ten outer sweeps,
+separately for CPCA and HOSVD initialization.
 
-```{r decomposition-trajectories, echo=FALSE, fig.width=7.6, fig.height=4.4, fig.cap="Mean decomposition error over all 10 sweeps. Solid filled trajectories are the rebuttal-stage results; dashed open trajectories are the package compatibility rerun."}
-trajectory_ylim <- range(
-  legacy_mean$relative_frobenius_error,
-  package_mean$relative_frobenius_error
-)
+```{r decomposition-trajectories, echo=FALSE, fig.width=7.6, fig.height=4.4, fig.cap="Mean relative tensor error over 10 sweeps, averaged over 20 paired replications."}
+trajectory_ylim <- range(decomp_mean$relative_frobenius_error)
 trajectory_ylim <- trajectory_ylim + c(-0.02, 0.02) * diff(trajectory_ylim)
 
 old_par <- par(no.readonly = TRUE)
@@ -346,44 +325,25 @@ for (initializer in c("CPCA", "HOSVD")) {
   box(bty = "l", col = "#666666")
 
   for (method in c("CP-ALS", "RGD", "RGN")) {
-    z_legacy <- legacy_mean[
-      legacy_mean$initialization == initializer &
-        legacy_mean$method == method,
+    z <- decomp_mean[
+      decomp_mean$initialization == initializer &
+        decomp_mean$method == method,
     ]
-    z_package <- package_mean[
-      package_mean$initialization == initializer &
-        package_mean$method == method,
-    ]
-    z_legacy <- z_legacy[order(z_legacy$iteration), ]
-    z_package <- z_package[order(z_package$iteration), ]
+    z <- z[order(z$iteration), ]
 
     lines(
-      z_legacy$iteration,
-      z_legacy$relative_frobenius_error,
+      z$iteration,
+      z$relative_frobenius_error,
       col = palette[[method]],
-      lty = 1,
+      lty = method_lty[[method]],
       lwd = 2.1
     )
     points(
-      z_legacy$iteration,
-      z_legacy$relative_frobenius_error,
+      z$iteration,
+      z$relative_frobenius_error,
       col = palette[[method]],
       pch = method_pch[[method]],
       cex = 0.68
-    )
-    lines(
-      z_package$iteration,
-      z_package$relative_frobenius_error,
-      col = palette[[method]],
-      lty = 2,
-      lwd = 1.6
-    )
-    points(
-      z_package$iteration,
-      z_package$relative_frobenius_error,
-      col = palette[[method]],
-      pch = method_pch_open[[method]],
-      cex = 0.72
     )
   }
 
@@ -393,76 +353,24 @@ for (initializer in c("CPCA", "HOSVD")) {
       legend = c("CP-ALS", "RGD", "RGN"),
       col = palette[c("CP-ALS", "RGD", "RGN")],
       pch = method_pch[c("CP-ALS", "RGD", "RGN")],
-      lty = rep(1, 3),
+      lty = method_lty[c("CP-ALS", "RGD", "RGN")],
       lwd = 1.8,
-      bty = "n",
-      cex = 0.80
-    )
-  } else {
-    legend(
-      "topright",
-      legend = c("Rebuttal-stage legacy", "Package rerun"),
-      col = "#333333",
-      pch = c(16, 1),
-      lty = c(1, 2),
-      lwd = c(2.1, 1.6),
       bty = "n",
       cex = 0.80
     )
   }
 }
-mtext("Rebuttal-stage and package decomposition trajectories", outer = TRUE)
+mtext("Decomposition error by initialization", outer = TRUE)
 par(old_par)
 ```
 
-The CPCA trajectories agree to numerical precision. The archived HOSVD package rerun is
-deliberately **not** labeled an exact legacy replay: `SegreCP` stores a
-canonical representation with nonnegative component weights, whereas the
-historical HOSVD route used a sign-dependent component ordering. The frozen
-parity audit therefore checks mean-path and checkpoint tolerances as well as
-method ranking, instead of requiring identical HOSVD iterates.
+## Observed-objective convergence
 
-```{r parity-summary, echo=FALSE}
-parity_display <- data.frame(
-  Quantity = c(
-    "Maximum CPCA trajectory difference",
-    "Maximum CP-ALS trajectory difference",
-    "Maximum mean-trajectory difference",
-    "Maximum 3/5/10 checkpoint difference",
-    "Checkpoint method ranking preserved",
-    "CPCA/HOSVD contrast preserved"
-  ),
-  Value = c(
-    format(decomp_parity$cpca_max_absolute_difference, scientific = TRUE),
-    format(decomp_parity$cpals_max_absolute_difference, scientific = TRUE),
-    format(
-      decomp_parity$max_absolute_mean_trajectory_difference,
-      scientific = TRUE
-    ),
-    format(
-      decomp_parity$max_absolute_checkpoint_difference,
-      scientific = TRUE
-    ),
-    as.character(decomp_parity$method_ranking_preserved),
-    as.character(decomp_parity$initializer_contrast_preserved)
-  ),
-  stringsAsFactors = FALSE
-)
-knitr::kable(parity_display, row.names = FALSE)
-```
+Recorded CP-ALS, RGD, and RGN fits provide the observed least-squares
+objective at each completed sweep. The figure normalizes each replication by
+its initial objective and then averages the ratios.
 
-These checks establish reproducibility of the reported pattern under the
-package's canonical representation. They do not turn an empirical trajectory
-comparison into a proof of global convergence.
-
-## Objective convergence in the archived package rerun
-
-For CP-ALS, RGD, and RGN, the archived package artifact records the same observed
-least-squares objective at every completed sweep. The figure normalizes each
-replication by its iteration-0 objective and then averages the ratios. The
-vertical scale is focused on the observed range; it does not start at zero.
-
-```{r objective-convergence, echo=FALSE, fig.width=7.4, fig.height=4.1, fig.cap="Mean observed-objective ratio for the 20 package reruns. The vertical axis is focused on the observed range and does not begin at zero."}
+```{r objective-convergence, echo=FALSE, fig.width=7.4, fig.height=4.1, fig.cap="Mean observed-objective ratio over 20 recorded runs; the vertical axis shows the observed range."}
 objective_ylim <- range(objective_mean$objective_ratio)
 objective_ylim <- c(
   floor(100 * objective_ylim[[1L]]) / 100,

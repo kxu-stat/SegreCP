@@ -36,8 +36,6 @@ read_rebuttal_csv <- function(filename) {
 
 settings <- read_rebuttal_csv("final_settings.csv")
 recorded_checks <- read_rebuttal_csv("final_validation_checks.csv")
-source_manifest <- read_rebuttal_csv("final_source_artifact_sha256.csv")
-checkpoint_manifest <- read_rebuttal_csv("checkpoint_source_manifest.csv")
 grid_raw <- read_rebuttal_csv("final_seven_method_grid_raw.csv")
 checkpoint_raw <- read_rebuttal_csv("checkpoint_metrics_raw.csv")
 timing_raw <- read_rebuttal_csv(
@@ -246,7 +244,7 @@ recomputed_checks <- data.frame(
     "high-coherence winners reproduce Panel B",
     "RGD/RGN reproduce the across-grid accuracy pair",
     "140 serial timing rows at rho=0.5, sigma=0.5",
-    "all recorded source validations passed"
+    "all recorded grid checks passed"
   ),
   passed = c(
     nrow(grid_raw) == 1680L,
@@ -291,30 +289,19 @@ runtime_tier_order_holds <-
 stopifnot(all(recomputed_checks$passed), runtime_tier_order_holds)
 ```
 
-## Scope
+## Experiment
 
-This vignette reproduces the synthetic tensor-on-tensor regression experiment
-that was reported as a three-panel table during the rebuttal. It does **not**
-use the design, output, or plotting data behind the manuscript's former
-Figure 1. The figures below are computed from the frozen replicate-level
-records shipped in `inst/extdata/rebuttal_tensor_regression`.
+These figures recompute the reported three-panel tensor-on-tensor regression
+results from paired replicate-level records bundled with the package. The
+[simulation scripts](https://github.com/kxu-stat/SegreCP/blob/main/reproducibility/simulations/README.md) generate new
+data and refit RGD/RGN under the same design.
 
-The competing-method rows are frozen numerical evidence, not installed
-estimators. `SegreCP` exposes only RGD, RGN, and their initialization layer; the
-current comparator entry point is maintained outside the built package.
-
-We use *reproduce* in a specific sense here: all displayed summaries are
-recomputed from the paired raw records, rather than copied from the formatted
-rebuttal table. The source manifest records the full simulation runner that
-generated those records; the vignette itself does not rerun the full benchmark
-during package building.
-
-## Frozen design and implementations
+## Design and implementations
 
 ```{r settings-table, echo=FALSE}
 knitr::kable(
   settings,
-  col.names = c("Design item", "Frozen value"),
+  col.names = c("Design item", "Value"),
   align = c("l", "l")
 )
 ```
@@ -328,30 +315,11 @@ TT-IHT use the native parameterizations and initializations specified in the
 rebuttal experiment. HOPLS extracts three latent blocks, so it has no entry in
 an outer-iteration checkpoint comparison.
 
-## Integrity checks before plotting
-
-```{r integrity-table, echo=FALSE}
-knitr::kable(
-  recomputed_checks,
-  col.names = c("Check recomputed in this vignette", "Passed"),
-  align = c("l", "c")
-)
-```
-
-All `r nrow(recomputed_checks)` checks pass. The accompanying source manifest
-contains `r nrow(source_manifest)` SHA-256 records for the frozen runner,
-solver sources, source result files, validation files, seed schedules, data
-fingerprints, and session records. A separate `r nrow(checkpoint_manifest)`-row
-manifest records the inputs and derived hash for the checkpoint archive. The
-checkpoint artifact is dedicated to
-the rebuttal's noiseless `rho = 0.5` setting; those two design values are
-file-level metadata rather than repeated columns in that compact CSV.
-
 ## Noiseless optimization checkpoints
 
 The first rebuttal panel recorded relative coefficient error after 3, 5, and
-10 outer updates at `(rho, sigma) = (0.5, 0)`. These are three deliberately
-recorded checkpoints, not a measurement at every intermediate update.
+10 outer updates at `(rho, sigma) = (0.5, 0)`. These are recorded checkpoints,
+not a measurement at every intermediate update.
 
 ```{r checkpoint-figure, echo=FALSE, fig.width=8.6, fig.height=5.6, fig.cap="Noiseless optimization checkpoints. Points are means over 20 paired replications; bars are deterministic 95% percentile-bootstrap intervals for the mean. The y axis is logarithmic."}
 plot_checkpoint_figure <- function() {
@@ -634,13 +602,10 @@ Monte Carlo uncertainty. The noisy-test RMSE is retained in the reconstructed
 table because it was reported in the rebuttal, but response noise compresses
 the separation between methods.
 
-## Runtime validation uses tiers, not exact seconds
+## Runtime comparison
 
-Absolute wall-clock seconds depend on hardware, BLAS, process load, and timer
-granularity. The frozen records retain the original seconds for provenance,
-but neither those values nor the order within two nearly tied pairs is used as
-a package pass/fail threshold. A fresh run is considered consistent with the
-rebuttal when it preserves the following well-separated partial order:
+Wall-clock seconds depend on the computing environment. The reported results
+have the following well-separated runtime groups:
 
 ```{r runtime-tier-table, echo=FALSE}
 runtime_tiers <- data.frame(
@@ -661,7 +626,7 @@ knitr::kable(
 )
 ```
 
-Thus the portable runtime statement is
+The relative ordering of these groups is
 
 \[
 \{\mathrm{RGD},\mathrm{RGN}\}
@@ -671,18 +636,12 @@ Thus the portable runtime statement is
 < \{\mathrm{RRR},\mathrm{Tucker\mbox{-}RGD}\}.
 \]
 
-We do not interpret the within-pair order of RGD versus RGN, or RRR versus
-Tucker-RGD, as reproducible evidence.
+Within-group differences are too small to interpret from these data.
 
-## What this reproduction supports
+## Interpretation
 
-The raw-record checks, aggregation reconstruction, and visual diagnostics make
-the rebuttal table auditable. In this frozen design they show rapid early
-progress by RGN, decreasing mean errors over the recorded noiseless
-checkpoints, regime-dependent behavior under high coherence, and a favorable
-accuracy--runtime tier for RGD/RGN.
-
-They do not prove global convergence, observe every intermediate update, or
-show that one method dominates for every tensor dimension, rank, coherence,
-noise level, initialization, or computing environment. Those are deliberately
-separate claims from reproducibility of this particular rebuttal experiment.
+The replication-level records reproduce the rebuttal table and show rapid
+early progress by RGN, decreasing mean errors over the recorded noiseless
+checkpoints, and regime-dependent behavior at high coherence. These finite-run
+results are empirical convergence diagnostics, distinct from the paper's
+theoretical guarantees.

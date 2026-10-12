@@ -5,6 +5,8 @@ bibentry(
     person("Ke", "Xu"),
     person("Yuefeng", "Han")
   ),
-  year = "2026",
-  note = "Manuscript and accompanying SegreCP R package"
+  year = "2025",
+  note = "arXiv:2510.00569; accompanying SegreCP R package",
+  doi = "10.48550/arXiv.2510.00569",
+  url = "https://arxiv.org/abs/2510.00569"
 )

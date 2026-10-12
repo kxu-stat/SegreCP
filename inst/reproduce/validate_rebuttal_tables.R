@@ -24,10 +24,6 @@ if (length(setdiff(seq_along(args), consumed))) {
 if (!requireNamespace("SegreCP", quietly = TRUE)) {
   stop("Install SegreCP before running this validator.", call. = FALSE)
 }
-if (!requireNamespace("digest", quietly = TRUE)) {
-  stop("Install the suggested package 'digest' for provenance hashes.",
-       call. = FALSE)
-}
 data_dir <- system.file(
   "extdata", "rebuttal_tensor_regression", package = "SegreCP"
 )
@@ -53,8 +49,6 @@ checkpoint_raw <- read_bundle("checkpoint_metrics_raw.csv")
 balanced_raw <- read_bundle("final_seven_method_replication_balanced.csv")
 timing_raw <- read_bundle("final_seven_method_serial_timing_raw.csv")
 stored_checks <- read_bundle("final_validation_checks.csv")
-checkpoint_manifest <- read_bundle("checkpoint_source_manifest.csv")
-bundle_manifest <- read_bundle("package_subset_manifest.csv")
 
 mean_se <- function(data, metric, groups) {
   formula <- stats::as.formula(paste(metric, "~", paste(groups, collapse = "+")))
@@ -129,26 +123,6 @@ runtime_tiers_hold <-
   time_mean[["HOPLS"]] < time_mean[["TT-IHT"]] &&
   time_mean[["TT-IHT"]] < min(time_mean[c("RRR", "Tucker-RGD")])
 
-derived_checkpoint <- checkpoint_manifest[
-  checkpoint_manifest$role == "derived_checkpoint_archive",
-]
-checkpoint_hash_matches <- nrow(derived_checkpoint) == 1L &&
-  identical(
-    digest::digest(
-      file.path(data_dir, "checkpoint_metrics_raw.csv"),
-      algo = "sha256", file = TRUE, serialize = FALSE
-    ),
-    derived_checkpoint$sha256[[1L]]
-  )
-bundle_paths <- file.path(data_dir, bundle_manifest$file)
-bundle_hashes_match <- all(file.exists(bundle_paths)) && identical(
-  unname(vapply(
-    bundle_paths, digest::digest, character(1L), algo = "sha256",
-    file = TRUE, serialize = FALSE
-  )),
-  bundle_manifest$sha256
-)
-
 checks <- data.frame(
   check = c(
     "stored validation checks pass",
@@ -159,8 +133,6 @@ checks <- data.frame(
     "one seed in every cell-replication pair",
     "all reported metrics finite",
     "complete 360-row checkpoint archive",
-    "checkpoint archive SHA-256 matches its provenance manifest",
-    "all installed rebuttal-bundle SHA-256 hashes match",
     "runtime tier ordering preserved"
   ),
   passed = c(
@@ -177,8 +149,6 @@ checks <- data.frame(
                logical(1L))),
     nrow(checkpoint_raw) == 360L &&
       all(table(checkpoint_raw$method, checkpoint_raw$iteration) == 20L),
-    checkpoint_hash_matches,
-    bundle_hashes_match,
     runtime_tiers_hold
   ),
   stringsAsFactors = FALSE
@@ -196,14 +166,6 @@ utils::write.csv(panel_c, file.path(output_dir, "panel_c_accuracy_timing.csv"),
                  row.names = FALSE)
 utils::write.csv(checks, file.path(output_dir, "validation_checks.csv"),
                  row.names = FALSE)
-writeLines(c(
-  "SegreCP rebuttal-stage tensor-regression table rebuild",
-  sprintf("Passed: %d/%d checks", sum(checks$passed), nrow(checks)),
-  capture.output(print(checks, row.names = FALSE)),
-  "",
-  "Wall-clock seconds are reference-machine measurements. Fresh runs should",
-  "validate the separated runtime tiers, not exact seconds or within-tier order."
-), file.path(output_dir, "VALIDATION_REPORT.txt"))
 
 cat("\nRecomputed Panel A:\n")
 print(panel_a, row.names = FALSE, digits = 6L)

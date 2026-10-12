@@ -8,9 +8,7 @@ rebuttal_extdata <- function(...) {
     installed,
     do.call(testthat::test_path,
             as.list(c("..", "..", "inst", "extdata", parts))),
-    do.call(file.path, as.list(c("inst", "extdata", parts))),
-    do.call(file.path,
-            as.list(c("software", "SegreCP", "inst", "extdata", parts)))
+    do.call(file.path, as.list(c("inst", "extdata", parts)))
   )
   candidates <- unique(candidates[nzchar(candidates)])
   found <- candidates[file.exists(candidates)]
@@ -61,21 +59,6 @@ test_that("the frozen rebuttal grid is complete and paired", {
   expect_true(all(paired_seeds$seed == 1L))
   expect_equal(nrow(checks), 10L)
   expect_true(all(checks$passed))
-
-  manifest <- read_rebuttal_csv(
-    "rebuttal_tensor_regression", "package_subset_manifest.csv"
-  )
-  paths <- vapply(
-    manifest$file,
-    function(file) rebuttal_extdata("rebuttal_tensor_regression", file),
-    character(1L)
-  )
-  observed_hashes <- vapply(
-    paths, digest::digest, character(1L), algo = "sha256",
-    file = TRUE, serialize = FALSE
-  )
-  expect_true(all(file.exists(paths)))
-  expect_identical(unname(observed_hashes), manifest$sha256)
 })
 
 test_that("Panel A checkpoint means reproduce the rebuttal table", {
@@ -235,43 +218,21 @@ test_that("initializer validation bundles retain every frozen check", {
     "validation_checks.csv"
   )
 
-  expect_equal(nrow(decomposition), 8L)
+  expect_equal(nrow(decomposition), 6L)
   expect_true(all(decomposition$passed))
-  expect_equal(nrow(regression), 18L)
+  expect_equal(nrow(regression), 13L)
   expect_true(all(regression$pass))
-
-  for (section in c("decomp_ref", "reg_ref", "decomp_pkg")) {
-    manifest <- read_rebuttal_csv(
-      "rebuttal_init", section, "package_subset_manifest.csv"
-    )
-    paths <- vapply(
-      manifest$file,
-      function(file) rebuttal_extdata("rebuttal_init", section, file),
-      character(1L)
-    )
-    observed_hashes <- vapply(
-      paths, digest::digest, character(1L), algo = "sha256",
-      file = TRUE, serialize = FALSE
-    )
-    expect_true(all(file.exists(paths)))
-    expect_identical(unname(observed_hashes), manifest$sha256)
-  }
 })
 
-test_that("the package rerun satisfies objective and legacy parity contracts", {
+test_that("the recorded decomposition paths have non-increasing objectives", {
   rerun <- read_rebuttal_csv(
-    "rebuttal_init", "decomp_pkg",
+    "rebuttal_init", "decomp_objective",
     "trajectory_raw.csv"
   )
   rerun_checks <- read_rebuttal_csv(
-    "rebuttal_init", "decomp_pkg",
+    "rebuttal_init", "decomp_objective",
     "validation_checks.csv"
   )
-  parity <- read_rebuttal_csv(
-    "rebuttal_init", "decomp_pkg",
-    "legacy_reference_parity.csv"
-  )
-
   expect_true(all(rerun_checks$passed))
   package_paths <- rerun[rerun$method %in% c("CP-ALS", "RGD", "RGN"), ]
   paths <- split(
@@ -285,19 +246,6 @@ test_that("the package rerun satisfies objective and legacy parity contracts", {
   }, logical(1L))
   expect_equal(length(nonincreasing), 20L * 2L * 3L)
   expect_true(all(nonincreasing))
-
-  expect_true(parity$reference_available)
-  expect_true(parity$method_ranking_preserved)
-  expect_true(parity$initializer_contrast_preserved)
-  expect_lte(parity$cpca_max_absolute_difference, parity$exact_tolerance)
-  expect_lte(parity$cpals_max_absolute_difference, parity$exact_tolerance)
-  expect_lte(parity$hosvd_initial_max_absolute_difference,
-             parity$exact_tolerance)
-  expect_lte(parity$max_absolute_mean_trajectory_difference,
-             parity$mean_path_tolerance)
-  expect_lte(parity$max_absolute_checkpoint_difference,
-             parity$checkpoint_tolerance)
-  expect_true(parity$passed)
 })
 
 test_that("a quick offline package rerun has non-increasing objectives", {

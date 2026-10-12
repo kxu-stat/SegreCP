@@ -1,21 +1,11 @@
 #!/usr/bin/env Rscript
 
-# Standalone comparison-method entry point for manuscript experiments.
+# Comparison-method entry point for manuscript experiments.
 #
-# IMPORTANT SCOPE BOUNDARY
-# ------------------------
-# This file lives in the repository-only reproducibility/ directory. That
-# directory is excluded from package builds, so this script is not installed,
-# exported, or supported as part of the SegreCP R-package API. It contains
-# experiment-only comparison code. The authors' RGD, RGN, CPCA, and HOSVD
-# routines belong in the package and in inst/scripts/ours_methods.R; they must
-# not be copied into this file.
-#
-# The archived rebuttal studies used several task-specific comparators.  Rather
-# than silently presenting them as package estimators, the catalog below records
-# the exact repository worker for each experiment.  The CP-ALS path that was
-# formerly mixed into the package's initialization runner is implemented here so
-# that the public package contains no competing optimizer.
+# This source-checkout script is separate from the installed SegreCP methods.
+# It runs the CP-ALS decomposition comparison and records the workers used for
+# other task-specific comparisons. RGD, RGN, CPCA, and HOSVD are implemented
+# in the package and exposed to experiment scripts by inst/scripts/ours_methods.R.
 
 .comparison_script_path <- local({
   # `source()` stores the sourced file in an `ofile` field on one of the active

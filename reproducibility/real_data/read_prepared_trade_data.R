@@ -1,5 +1,4 @@
-# Read the frozen paper inputs from a private data directory. This source-only
-# helper is not part of the general SegreCP estimator API and distributes no data.
+# Read the paper's prepared trade inputs from a private data directory.
 .trade_reader_dir <- local({
   files <- unlist(lapply(sys.frames(), function(frame) {
     if (is.null(frame$ofile)) NA_character_ else as.character(frame$ofile)
@@ -15,16 +14,14 @@
 #' Read the prepared 2018–2019 trade analysis inputs
 #'
 #' Supply the private directory created by `run.R --prepare`, not the
-#' `analysis_official` subdirectory. The function verifies all four frozen
-#' processed-file SHA-256 hashes and sizes before loading the data. It then
-#' checks the registered preprocessing choice, tensor shape, exporter keys,
-#' feature order, and balanced fold assignments. It does not download data,
-#' fit an estimator, or verify the 82 official raw source files.
+#' `analysis_official` subdirectory. The function checks that the four inputs
+#' match the recorded analysis, then verifies the preprocessing choice,
+#' tensor shape, exporter keys, feature order, and fold assignments.
 #'
 #' @param data_dir Existing private data directory passed to `run.R`.
 #' @return A list with `X` (80-by-6 numeric design matrix), `Y` (80-by-25-by-21-
 #'   by-8 response array), `fold` (five aligned fold IDs), `exporters` (aligned
-#'   ISO3 keys), `feature_names`, `metadata`, and `input_hashes`.
+#'   ISO3 keys), `feature_names`, and `metadata`.
 read_prepared_trade_data <- function(data_dir) {
   if (!is.character(data_dir) || length(data_dir) != 1L ||
       is.na(data_dir) || !nzchar(data_dir) || !dir.exists(data_dir)) {
@@ -52,7 +49,7 @@ read_prepared_trade_data <- function(data_dir) {
 
   manifest <- file.path(.trade_reader_dir, "reference_derived_sha256.csv")
   if (!file.exists(manifest)) {
-    stop("The frozen processed-input manifest is missing from the checkout.",
+    stop("The prepared-input reference is missing from the checkout.",
          call. = FALSE)
   }
   expected <- utils::read.csv(manifest, stringsAsFactors = FALSE,
@@ -60,7 +57,7 @@ read_prepared_trade_data <- function(data_dir) {
   if (!identical(names(expected), c("local_path", "bytes", "sha256")) ||
       nrow(expected) != 4L || anyDuplicated(expected$local_path) ||
       !setequal(expected$local_path, unname(relative))) {
-    stop("The frozen processed-input manifest has an unexpected schema or path set.",
+    stop("The prepared-input reference has an unexpected schema or path set.",
          call. = FALSE)
   }
   expected <- expected[match(relative, expected$local_path), , drop = FALSE]
@@ -69,9 +66,8 @@ read_prepared_trade_data <- function(data_dir) {
                         algo = "sha256", file = TRUE)
   if (anyNA(actual_size) || any(actual_size != expected$bytes) ||
       any(tolower(expected$sha256) != unname(actual_hash))) {
-    stop("Prepared trade inputs differ from the frozen paper data. ",
-         "Run `run.R --check-structure` to diagnose a changed source; ",
-         "do not describe these inputs as an exact paper replay.",
+    stop("Prepared trade inputs differ from the recorded analysis. ",
+         "Run `run.R --check-structure` to inspect their contents.",
          call. = FALSE)
   }
 
@@ -163,5 +159,5 @@ read_prepared_trade_data <- function(data_dir) {
 
   list(X = X, Y = Y, fold = as.integer(fold_table$fold),
        exporters = exporters, feature_names = feature_names,
-       metadata = metadata, input_hashes = actual_hash)
+       metadata = metadata)
 }

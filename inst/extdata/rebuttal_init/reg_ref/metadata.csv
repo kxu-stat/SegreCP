@@ -20,4 +20,3 @@
 "sensitivity_scope","all"
 "sensitivity_cell_count","4"
 "iteration_validation","every method completed exactly the requested number of iterations"
-"solver_source","rgn_benchmark/tensor-regression.R (historical frozen hash in source_manifest.csv)"

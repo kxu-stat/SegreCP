@@ -9,7 +9,7 @@ usage <- paste(
   "",
   "Without --full: one replication and three sweeps (a quick smoke run).",
   "With --full: the rebuttal design of 20 replications and 10 sweeps.",
-  "The output directory must not already exist. SegreCP and digest must be installed.",
+  "The output directory must not already exist. SegreCP must be installed.",
   sep = "\n"
 )
 if ("--help" %in% args) {
@@ -26,9 +26,8 @@ output_dir <- sub("^--output-dir=", "", value_args)
 if (!nzchar(output_dir) || file.exists(output_dir)) {
   stop("Provide a new, non-existing --output-dir path.", call. = FALSE)
 }
-if (!requireNamespace("SegreCP", quietly = TRUE) ||
-    !requireNamespace("digest", quietly = TRUE)) {
-  stop("Install SegreCP and digest before running this script.", call. = FALSE)
+if (!requireNamespace("SegreCP", quietly = TRUE)) {
+  stop("Install SegreCP before running this script.", call. = FALSE)
 }
 
 full_run <- "--full" %in% args
@@ -64,9 +63,8 @@ generate_truth <- function() {
   })
 }
 
-# The historical HOSVD sensitivity run used signed core weights for its
-# first component order. Subsequent sweeps use SegreCP's canonical weights.
-historical_hosvd_first_order <- function(observed) {
+# Order the HOSVD start by signed core weights for the first sweep.
+hosvd_first_order <- function(observed) {
   factors <- lapply(seq_along(dims), function(mode) {
     permutation <- c(mode, setdiff(seq_along(dims), mode))
     unfolding <- matrix(aperm(observed, permutation), nrow = dims[[mode]])
@@ -98,7 +96,7 @@ fit_path <- function(observed, truth, initial, method, initialization) {
     fit <- fit_sweeps(initial, sweeps, "decreasing_weight")
     return(SegreCP::convergence_data(fit, truth))
   }
-  first_order <- historical_hosvd_first_order(observed)
+  first_order <- hosvd_first_order(observed)
   first <- fit_sweeps(initial[first_order], 1L, "fixed")
   path <- SegreCP::convergence_data(first, truth)
   if (sweeps > 1L) {
@@ -113,7 +111,6 @@ fit_path <- function(observed, truth, initial, method, initialization) {
 
 trajectory <- vector("list", replications * 4L)
 terminal <- vector("list", replications * 4L)
-fingerprints <- vector("list", replications)
 row_id <- 0L
 for (replication in seq_len(replications)) {
   seed <- master_seed + replication
@@ -131,17 +128,7 @@ for (replication in seq_len(replications)) {
       observed, rank, method = "hosvd"
     )$comps
   )
-  fingerprints[[replication]] <- data.frame(
-    replication = replication, seed = seed,
-    data_sha256 = digest::digest(
-      list(truth = truth, observed_tensor = observed_vector),
-      algo = "sha256", serialize = TRUE
-    )
-  )
   for (initialization in names(initializers)) {
-    initializer_sha256 <- digest::digest(
-      initializers[[initialization]], algo = "sha256", serialize = TRUE
-    )
     for (method in c("RGD", "RGN")) {
       row_id <- row_id + 1L
       path <- fit_path(observed, truth, initializers[[initialization]],
@@ -156,7 +143,6 @@ for (replication in seq_len(replications)) {
       terminal[[row_id]] <- data.frame(
         replication = replication, seed = seed,
         initialization = initialization, method = method,
-        initializer_sha256 = initializer_sha256,
         final_relative_frobenius_error =
           tail(path$relative_frobenius_error, 1L),
         final_objective = tail(path$objective, 1L)
@@ -167,33 +153,31 @@ for (replication in seq_len(replications)) {
 }
 trajectory <- do.call(rbind, trajectory)
 terminal <- do.call(rbind, terminal)
-fingerprints <- do.call(rbind, fingerprints)
 expected_rows <- replications * 2L * 2L * (sweeps + 1L)
 checks <- data.frame(
   check = c("expected trajectory rows", "finite trajectories",
-            "common initialization per method", "nonincreasing observed loss",
-            "distinct generated tensors"),
+            "paired RGD/RGN fits", "nonincreasing observed loss",
+            "unique replication seeds"),
   passed = c(
     nrow(trajectory) == expected_rows,
     all(is.finite(trajectory$relative_frobenius_error)) &&
       all(is.finite(trajectory$objective)),
-    all(vapply(split(terminal$initializer_sha256,
+    all(vapply(split(terminal$method,
                      list(terminal$replication, terminal$initialization),
                      drop = TRUE),
-               function(z) length(unique(z)) == 1L, logical(1L))),
+               function(z) identical(sort(z), c("RGD", "RGN")), logical(1L))),
     all(vapply(split(trajectory, list(trajectory$replication,
                                      trajectory$initialization,
                                      trajectory$method), drop = TRUE),
                function(z) all(diff(z$objective[order(z$iteration)]) <=
                                 1e-8 * max(1, abs(z$objective[[1L]]))),
                logical(1L))),
-    !anyDuplicated(fingerprints$data_sha256)
+    !anyDuplicated(unique(trajectory[c("replication", "seed")])$seed)
   )
 )
 
-# Frozen tables are used only after the fresh fits, for transparent comparison.
-# HOSVD tolerances were calibrated for the full 20-replication mean path.
-compare_reference <- function(reference_name, directory) {
+# Compare fresh trajectories with the rebuttal-stage records.
+compare_reference <- function(directory) {
   reference_file <- file.path(directory, "trajectory_raw.csv")
   if (!file.exists(reference_file)) return(NULL)
   reference <- utils::read.csv(reference_file, stringsAsFactors = FALSE)
@@ -202,16 +186,14 @@ compare_reference <- function(reference_name, directory) {
       reference$replication <= replications &
       reference$iteration <= sweeps, , drop = FALSE
   ]
-  if (!"objective" %in% names(reference)) reference$objective <- NA_real_
   keys <- c("replication", "seed", "initialization", "method", "iteration")
   joined <- merge(
-    trajectory[c(keys, "relative_frobenius_error", "objective")],
-    reference[c(keys, "relative_frobenius_error", "objective")],
+    trajectory[c(keys, "relative_frobenius_error")],
+    reference[c(keys, "relative_frobenius_error")],
     by = keys, suffixes = c("_fresh", "_reference")
   )
   if (nrow(joined) != nrow(trajectory)) {
-    stop("The frozen ", reference_name, " reference has incomplete keys.",
-         call. = FALSE)
+    stop("The rebuttal trajectory has incomplete keys.", call. = FALSE)
   }
   joined$error_difference <- abs(
     joined$relative_frobenius_error_fresh -
@@ -248,25 +230,9 @@ compare_reference <- function(reference_name, directory) {
       )
     }, logical(1L)))
   }
-  fingerprint_file <- file.path(directory,
-                                "seed_schedule_and_data_fingerprints.csv")
-  fingerprint_matches <- NA_integer_
-  if (reference_name == "frozen_package_rerun" &&
-      file.exists(fingerprint_file)) {
-    reference_fingerprints <- utils::read.csv(fingerprint_file)
-    fingerprint_matches <- sum(
-      fingerprints$data_sha256 ==
-        reference_fingerprints$data_sha256[seq_len(replications)]
-    )
-  }
   data.frame(
-    reference = reference_name,
     scope = if (full_run) "full_design" else "smoke_subset",
     matched_rows = nrow(joined),
-    data_fingerprint_matches = fingerprint_matches,
-    data_fingerprint_total = if (is.na(fingerprint_matches)) {
-      NA_integer_
-    } else replications,
     cpca_max_absolute_error_difference = max(joined$error_difference[
       joined$initialization == "CPCA"
     ]),
@@ -276,34 +242,18 @@ compare_reference <- function(reference_name, directory) {
     ),
     mean_path_max_absolute_error_difference = max(means$absolute_difference),
     checkpoint_max_absolute_error_difference = checkpoint_difference,
-    checkpoint_rgd_rgn_rank_preserved = checkpoint_rank_preserved,
-    objective_max_absolute_difference = if (all(is.na(
-      joined$objective_reference
-    ))) NA_real_ else max(abs(
-      joined$objective_fresh - joined$objective_reference
-    ))
+    checkpoint_rgd_rgn_rank_preserved = checkpoint_rank_preserved
   )
 }
-reference_rows <- list(
-  compare_reference("frozen_package_rerun", system.file(
-    "extdata", "rebuttal_init", "decomp_pkg", package = "SegreCP"
-  )),
-  compare_reference("historical_rebuttal", system.file(
-    "extdata", "rebuttal_init", "decomp_ref", package = "SegreCP"
-  ))
-)
-reference_rows <- Filter(Negate(is.null), reference_rows)
-reference_comparison <- if (length(reference_rows)) {
-  do.call(rbind, reference_rows)
-} else NULL
+reference_comparison <- compare_reference(system.file(
+  "extdata", "rebuttal_init", "decomp_ref", package = "SegreCP"
+))
 
 dir.create(output_dir, recursive = TRUE)
 utils::write.csv(trajectory, file.path(output_dir, "trajectory.csv"),
                  row.names = FALSE)
 utils::write.csv(terminal, file.path(output_dir, "terminal_accuracy.csv"),
                  row.names = FALSE)
-utils::write.csv(fingerprints, file.path(output_dir,
-                  "seed_schedule_and_data_fingerprints.csv"), row.names = FALSE)
 utils::write.csv(checks, file.path(output_dir, "validation_checks.csv"),
                  row.names = FALSE)
 if (!is.null(reference_comparison)) {

@@ -14,10 +14,12 @@ if (status != 0L) stop("Fresh decomposition smoke run failed.")
 path <- utils::read.csv(file.path(output, "trajectory.csv"))
 terminal <- utils::read.csv(file.path(output, "terminal_accuracy.csv"))
 checks <- utils::read.csv(file.path(output, "validation_checks.csv"))
-fingerprints <- utils::read.csv(file.path(output,
-  "seed_schedule_and_data_fingerprints.csv"))
+comparison <- utils::read.csv(file.path(output, "reference_comparison.csv"))
 stopifnot(nrow(path) == 16L, nrow(terminal) == 4L,
-          nrow(fingerprints) == 1L, all(checks$passed),
+          all(checks$passed),
+          nrow(comparison) == 1L, comparison$matched_rows == 16L,
+          is.finite(comparison$cpca_max_absolute_error_difference),
+          !is.na(comparison$checkpoint_rgd_rgn_rank_preserved),
           identical(sort(unique(path$method)), c("RGD", "RGN")),
           identical(sort(unique(path$initialization)), c("CPCA", "HOSVD")),
           identical(sort(unique(path$iteration)), 0:3))
@@ -39,12 +41,8 @@ metrics <- utils::read.csv(file.path(regression_output,
                                      "authors_regression_metrics.csv"))
 objectives <- utils::read.csv(file.path(regression_output,
                                         "authors_regression_objective.csv"))
-regression_fingerprints <- utils::read.csv(file.path(
-  regression_output, "generated_data_fingerprints.csv"
-))
 stopifnot(
   nrow(metrics) == 2L, nrow(objectives) == 6L,
-  nrow(regression_fingerprints) == 1L,
   identical(sort(metrics$method), c("RGD", "RGN")),
   identical(sort(unique(objectives$iteration)), 0:2),
   all(is.finite(metrics$coefficient_error)),

@@ -18,4 +18,3 @@
 "update_scheme","gauss_seidel"
 "retraction_iterations","5"
 "uncertainty","percentile-bootstrap 95% CI across paired replications; B=4000"
-"solver_source","rgn_benchmark_decomp/tensor-CP-decomposition.R (historical frozen hash in source_manifest.csv)"
