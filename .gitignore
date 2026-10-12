@@ -1,0 +1,8 @@
+*.o
+*.so
+*.dll
+*.dylib
+.Rhistory
+.RData
+.Rproj.user/
+.DS_Store

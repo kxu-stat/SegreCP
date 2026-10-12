@@ -1,0 +1,14 @@
+"variant_id","rta_encoding","aggregation_weight","tariff_transform","x_scaling","response_fit_scale","rationale","feature_count"
+"v0_binary_value_raw_center","binary_any","value","raw","mean_sd","center_only","current primary benchmark",6
+"v1_scope_value_raw_center","scope_0_1_2","value","raw","mean_sd","center_only","ordered agreement scope: none, one domain, goods and services",6
+"v2_twohot_value_raw_center","goods_services_twohot","value","raw","mean_sd","center_only","separate goods and services agreement indicators",7
+"v3_scope_sqrt_raw_center","scope_0_1_2","sqrt_value","raw","mean_sd","center_only","scope encoding with less concentration in the largest lagged trade cells",6
+"v4_twohot_sqrt_raw_center","goods_services_twohot","sqrt_value","raw","mean_sd","center_only","two-channel scope with less concentration in the largest lagged trade cells",7
+"v5_scope_value_logtariff_center","scope_0_1_2","value","log1p","mean_sd","center_only","scope encoding with a robust tariff transform",6
+"v6_scope_value_raw_channel_scaled_fit","scope_0_1_2","value","raw","mean_sd","training_fold_channel_zscore","equalize response-channel fitting influence; evaluate on original centered scale",6
+"v7_scope_logvalue_raw_center","scope_0_1_2","log1p_value","raw","mean_sd","center_only","scope encoding with log-damped lagged trade weights",6
+"v8_scope_uniform_raw_center","scope_0_1_2","uniform","raw","mean_sd","center_only","scope encoding with equal partner-section weights",6
+"v9_scope_winsor99_value_raw_center","scope_0_1_2","winsor99_value","raw","mean_sd","center_only","scope encoding with exporter-wise 99th-percentile winsorized value weights",6
+"v10_scope_value_raw_robustx_center","scope_0_1_2","value","raw","median_iqr","center_only","scope encoding with training-fold median and IQR input scaling",6
+"v11_scope_logvalue_logtariff_center","scope_0_1_2","log1p_value","log1p","mean_sd","center_only","combine log-damped weights with log-transformed tariffs",6
+"v12_scope_logvalue_raw_channel_scaled_fit","scope_0_1_2","log1p_value","raw","mean_sd","training_fold_channel_zscore","combine log-damped weights with equal response-channel fitting influence",6

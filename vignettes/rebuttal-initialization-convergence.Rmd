@@ -1,7 +1,7 @@
 ---
-title: "Rebuttal Initialization Sensitivity and Convergence"
+title: "CP Initialization and Convergence"
 vignette: >
-  %\VignetteIndexEntry{Rebuttal Initialization Sensitivity and Convergence}
+  %\VignetteIndexEntry{CP Initialization and Convergence}
   %\VignetteEngine{knitr::knitr}
   %\VignetteEncoding{UTF-8}
 ---

@@ -1,17 +1,7 @@
 #!/usr/bin/env Rscript
 
-# Experiment-facing entry point for the methods proposed in the manuscript.
-#
-# This script intentionally exposes only three pieces of the SegreCP workflow:
-#   1. CPCA, HOSVD, random, or user-supplied initialization;
-#   2. Riemannian gradient descent (RGD); and
-#   3. Riemannian Gauss--Newton (RGN).
-#
-# The numerical algorithms themselves live in the modular R/C++ package
-# sources.  Keeping this thin entry point separate from the implementation has
-# two advantages: experiments share one documented interface, while package
-# internals remain testable and maintainable.  No competing estimator is
-# implemented or loaded here.
+# Manuscript experiment entry point: CPCA/HOSVD initialization and RGD/RGN.
+# Numerical kernels live in SegreCP; this file keeps the experiment calls small.
 
 .require_segrecp <- function() {
   if (!requireNamespace("SegreCP", quietly = TRUE)) {
@@ -31,8 +21,7 @@
 }
 
 .ours_initialization <- function(initialization) {
-  # Lists and functions are deliberately passed through: the public package API
-  # supports both user-supplied component lists and custom initializer functions.
+  # The package API also accepts component lists and initializer functions.
   if (!is.character(initialization)) return(initialization)
   initialization <- tolower(initialization)
   if (length(initialization) != 1L ||
@@ -192,4 +181,3 @@ ours_convergence <- function(fit, truth = NULL) {
   .require_segrecp()
   SegreCP::convergence_data(fit, truth = truth)
 }
-

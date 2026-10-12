@@ -1,0 +1,36 @@
+name: R-CMD-check
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  R-CMD-check:
+    runs-on: ${{ matrix.config.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        config:
+          - {os: ubuntu-latest, r: 'release'}
+          - {os: macos-latest, r: 'release'}
+          - {os: windows-latest, r: 'release'}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: r-lib/actions/setup-pandoc@v2
+      - uses: r-lib/actions/setup-r@v2
+        with:
+          r-version: ${{ matrix.config.r }}
+          use-public-rspm: true
+      - uses: r-lib/actions/setup-r-dependencies@v2
+        with:
+          extra-packages: any::rcmdcheck
+          needs: check
+      - uses: r-lib/actions/check-r-package@v2
+      - name: Install package for source-checkout smoke tests
+        if: runner.os != 'Windows'
+        run: R CMD INSTALL .
+      - name: Check repository-only reproduction scripts
+        if: runner.os != 'Windows'
+        run: |
+          Rscript reproducibility/real_data/tests/test_contracts.R
+          Rscript reproducibility/tests/test_comparison_contracts.R

@@ -48,6 +48,8 @@
 }
 
 comparison_repository_root <- function() {
+  # Locate the SegreCP source checkout, whether nested in the manuscript
+  # repository or published as a standalone repository.
   starting_directories <- c(
     if (!is.na(.comparison_script_path)) dirname(.comparison_script_path)
     else character(),
@@ -57,15 +59,33 @@ comparison_repository_root <- function() {
     lapply(starting_directories, .comparison_ancestors),
     use.names = FALSE
   ))
-  marker <- file.path(
-    candidates,
-    "software", "SegreCP", "DESCRIPTION"
-  )
-  hit <- which(file.exists(marker))
+  package_marker <- file.path(candidates, "DESCRIPTION")
+  script_marker <- file.path(candidates, "reproducibility",
+                             "comparison_methods.R")
+  hit <- which(file.exists(package_marker) & file.exists(script_marker))
   if (!length(hit)) {
     stop(
-      "Could not locate the manuscript repository root. Source this file from ",
-      "its repository checkout or set the working directory to that root.",
+      "Could not locate the SegreCP source checkout. Source ",
+      "reproducibility/comparison_methods.R from that checkout.",
+      call. = FALSE
+    )
+  }
+  normalizePath(candidates[[hit[[1L]]]], mustWork = TRUE)
+}
+
+.comparison_manuscript_root <- function() {
+  candidates <- .comparison_ancestors(comparison_repository_root())
+  package_marker <- file.path(candidates, "software", "SegreCP",
+                              "DESCRIPTION")
+  worker <- file.path(candidates, "rgn_benchmark",
+                      "run_tensor_on_tensor_baseline_grid.R")
+  hit <- which(file.exists(package_marker) & file.exists(worker))
+  if (!length(hit)) {
+    stop(
+      "The tensor-regression comparison grid requires the complete manuscript ",
+      "repository, including rgn_benchmark/",
+      "run_tensor_on_tensor_baseline_grid.R. The standalone SegreCP checkout ",
+      "supports the CP-ALS decomposition comparison in this script only.",
       call. = FALSE
     )
   }
@@ -77,7 +97,8 @@ comparison_repository_root <- function() {
 #' The table is a routing record, not a statement that all third-party methods
 #' have identical APIs or stopping rules.  Each benchmark worker fixes its own
 #' rank, initialization, iteration budget, and timing boundary as documented in
-#' the corresponding rebuttal-stage experiment.
+#' the corresponding rebuttal-stage experiment. Worker paths are relative to
+#' the checkout named in `required_checkout`.
 comparison_method_catalog <- function() {
   data.frame(
     task = c(
@@ -90,11 +111,13 @@ comparison_method_catalog <- function() {
       "TT-IHT", "HOPLS"
     ),
     repository_worker = c(
-      "software/SegreCP/reproducibility/comparison_methods.R",
+      "reproducibility/comparison_methods.R",
       "rgn_benchmark_decomp/run_worker_decomp.R",
       "rgn_benchmark_decomp/run_worker_decomp.R",
       rep("rgn_benchmark/run_tensor_on_tensor_baseline_grid.R", 5L)
     ),
+    required_checkout = c("SegreCP source checkout",
+                          rep("complete manuscript repository", 7L)),
     package_api = FALSE,
     stringsAsFactors = FALSE
   )
@@ -216,7 +239,7 @@ fit_comparison_cp_als <- function(
 run_tensor_regression_comparisons <- function(
     extra_args = character(),
     execute = FALSE) {
-  root <- comparison_repository_root()
+  root <- .comparison_manuscript_root()
   runner <- file.path(
     root, "rgn_benchmark", "run_tensor_on_tensor_baseline_grid.R"
   )
@@ -233,7 +256,7 @@ run_tensor_regression_comparisons <- function(
     return(list(executable = file.path(R.home("bin"), "Rscript"),
                 arguments = command))
   }
-  status <- system2(file.path(R.home("bin"), "Rscript"), command)
+  status <- system2(file.path(R.home("bin"), "Rscript"), shQuote(command))
   if (!identical(status, 0L)) {
     stop("The tensor-regression comparison worker failed with status ", status,
          ".", call. = FALSE)

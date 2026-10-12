@@ -1,276 +1,170 @@
 # SegreCP
 
-`SegreCP` is an R package for the sequential Riemannian gradient descent
-(RGD) and Riemannian Gauss--Newton (RGN) algorithms in *Guaranteed Noisy CP
-Tensor Recovery via Riemannian Optimization on the Segre Manifold*. It covers
-
-- noisy CP tensor decomposition (identity observation operator),
-- scalar-on-tensor regression, and
-- tensor-on-tensor regression.
-
-Every component iterate remains a nonzero rank-one tensor. Updates use the
-exact rank-`(1, ..., 1)` T-HOSVD retraction specialized to a rank-one-plus-
-tangent proposal.
-
-## Supported software scope
-
-The supported estimators are **RGD and RGN only**. The package also provides the
-initialization layer required by those estimators: CPCA, HOSVD, random starts,
-and user-supplied initializations. It does not install or export CP-ALS,
-Orth-ALS, ICO, CP-RRR, Tucker-RGD, TT-IHT, HOPLS, or another competing
-optimizer.
-
-For manuscript experiments, the single authors-method entry point is installed
-at `inst/scripts/ours_methods.R`. The repository-only comparison entry point is
-`reproducibility/comparison_methods.R`; `.Rbuildignore` excludes that entire
-directory from the built package. The table validator under `inst/reproduce/`
-only reads frozen numerical records and contains no comparator implementation.
+`SegreCP` implements the Riemannian gradient descent (RGD) and Riemannian
+Gauss–Newton (RGN) methods from *Guaranteed Noisy CP Tensor Recovery via
+Riemannian Optimization on the Segre Manifold*. It fits low-rank CP tensor
+decompositions, scalar-on-tensor regressions, and tensor-on-tensor regressions.
+CPCA and HOSVD initializations are included; random and user-supplied starts
+are also supported. The installed estimators are **RGD and RGN only**.
 
 ## Installation
 
-When this folder is published as its own GitHub repository:
-
-```r
-# install.packages("remotes")
-remotes::install_github("OWNER/SegreCP")
-```
-
-When it remains under `software/SegreCP` in the manuscript repository:
-
-```r
-remotes::install_github(
-  "OWNER/REPOSITORY",
-  subdir = "software/SegreCP"
-)
-```
-
-For a local checkout, run from a shell at the manuscript-repository root:
+From the `SegreCP` source directory (the directory containing `DESCRIPTION`):
 
 ```sh
-R CMD INSTALL software/SegreCP
+R CMD INSTALL .
 ```
 
-The package currently carries a research-review, all-rights-reserved license
-placeholder. The copyright holders should select an open-source license before
-advertising the package as open-source software.
+You need R >= 4.2, a C++ build toolchain, and the R packages `Rcpp` and
+`rTensor`. The repository URL for a GitHub installation command has not yet
+been set. Before public release, the copyright holders must also replace the
+current all-rights-reserved research-review license with a chosen public
+license; the present source should not be described as open source.
 
-## Data formats and efficiency
+## Quick start
 
-The computational core uses base R numeric arrays and matrices. They have
-contiguous column-major storage and can be passed directly to the compiled C++
-kernels. An `rTensor::Tensor` is fully supported and converted once at the API
-boundary, preserving its dimensions and entry order.
+The examples below use small simulated data and run without downloading the
+paper's datasets. `rank` is the number of CP components; `method` selects RGD
+or RGN, and `init` selects CPCA or HOSVD. The default `segre_control()` profile
+follows the displayed paper algorithms. For applications, see
+`?segre_control` for explicitly recorded numerical safeguards in the
+`"practical"` profile.
 
-For decomposition, use either a base array with dimensions
-`c(p1, ..., pd)` or an `rTensor::Tensor` of the same size.
-
-For regression, the most efficient design representation is an
-`n`-by-`prod(input_dims)` numeric matrix. The following are equivalent:
-
-- a matrix whose rows are vectorized covariate tensors;
-- an array or `rTensor::Tensor` with dimensions `c(n, input_dims)`; or
-- a length-`n` list of arrays or `rTensor::Tensor` objects.
-
-Responses may be a length-`n` vector, an `n`-by-`prod(output_dims)` matrix, an
-array or `rTensor::Tensor` with dimensions `c(n, output_dims)`, or a list of
-response tensors. Public coefficient modes are always ordered as
-**input modes followed by output modes**.
-
-## CP decomposition
+### CP tensor decomposition
 
 ```r
 library(SegreCP)
 
 set.seed(1)
-dims <- c(8, 9, 7)
-u <- lapply(dims, function(p) {
+dims <- c(5, 6, 4)
+factors <- lapply(dims, function(p) {
   z <- rnorm(p)
   z / sqrt(sum(z^2))
 })
-signal <- array(3 * Reduce(kronecker, rev(u)), dims)
-observed <- signal + array(rnorm(prod(dims), sd = 0.05), dims)
+signal <- array(3 * Reduce(kronecker, rev(factors)), dim = dims)
+observed <- signal + array(rnorm(prod(dims), sd = 0.05), dim = dims)
 
-fit_rgd <- segre_decompose(
-  observed,
-  rank = 1,
-  method = "rgd",
-  init = "cpca",
-  control = segre_control(profile = "manuscript", max_iter = 20)
+fit_decomp <- segre_decompose(
+  observed, rank = 1, method = "rgd", init = "cpca",
+  control = segre_control(max_iter = 10)
 )
-
-fit_rgn <- segre_decompose(
-  observed,
-  rank = 1,
-  method = "rgn",
-  init = "hosvd",
-  control = segre_control(profile = "manuscript", max_iter = 10)
-)
-
-reconstructed <- reconstruct_cp(fit_rgn)
-summary(fit_rgn)
+dim(reconstruct_cp(fit_decomp))
+summary(fit_decomp)
 ```
 
-To retain an auditable optimization trajectory, set `keep_history = TRUE` and
-use `convergence_data()`:
+To inspect the observed objective after each sweep, use
+`convergence_data(fit_decomp)`. For simulated data, set `keep_history = TRUE`
+when fitting and pass the known CP truth to obtain reconstruction error as
+well. For decomposition with an identity observation operator, an RGN
+component update equals a unit-step RGD update.
 
-```r
-fit_trace <- segre_decompose(
-  observed, rank = 1, method = "rgn", init = "hosvd",
-  control = segre_control(profile = "manuscript", max_iter = 10),
-  keep_history = TRUE
-)
-trace <- convergence_data(fit_trace)
-```
+### Scalar-on-tensor regression
 
-If simulated truth is supplied, `convergence_data(fit_trace, truth)` also
-returns whole-tensor relative Frobenius error at initialization and after every
-completed sweep.
-
-For decomposition with the identity observation operator, RGN is exactly the
-unit-step RGD component update.
-
-## Tensor regression
+Each row of `X` below is a vectorized `3 x 4` predictor tensor. A numeric
+array with dimensions `c(n, 3, 4)` is accepted too.
 
 ```r
 set.seed(2)
-n <- 100
-input_dims <- c(4, 5)
-output_dims <- c(3, 2)
-coefficient_dims <- c(input_dims, output_dims)
-
-factors <- lapply(coefficient_dims, function(p) {
-  z <- rnorm(p)
-  z / sqrt(sum(z^2))
-})
-beta <- 2 * Reduce(kronecker, rev(factors))
-
+n <- 80
+input_dims <- c(3, 4)
 X <- matrix(rnorm(n * prod(input_dims)), nrow = n)
-beta_matrix <- matrix(beta, nrow = prod(input_dims),
-                      ncol = prod(output_dims))
-Y <- X %*% beta_matrix +
-  matrix(rnorm(n * prod(output_dims), sd = 0.05), nrow = n)
+beta <- 2 * outer(c(1, 0, 0), c(1, 0, 0, 0))
+y <- as.numeric(X %*% as.vector(beta) + rnorm(n, sd = 0.05))
 
-fit <- segre_regress(
-  X, Y,
-  rank = 1,
-  input_dims = input_dims,
-  output_dims = output_dims,
-  method = "rgn",
-  init = "cpca",
-  control = segre_control(profile = "manuscript", max_iter = 10)
+fit_scalar <- segre_regress(
+  X, y, rank = 1, input_dims = input_dims,
+  method = "rgn", init = "hosvd",
+  control = segre_control(max_iter = 5)
 )
-
-dim(coef(fit))
-dim(predict(fit, X[1:4, , drop = FALSE]))
+dim(coef(fit_scalar))
+predict(fit_scalar, X[1:3, , drop = FALSE])
 ```
 
-## Initialization
+### Tensor-on-tensor regression
 
-Both required spectral initializers are available:
-
-```r
-cp_initialize(observed, rank = 1, method = "cpca")
-cp_initialize(observed, rank = 1, method = "hosvd")
-```
-
-`"random"`, a supplied list of CP components, and a custom function are also
-supported. A custom function is called as `function(x, rank, ...)` and returns
-either a component list or `list(comps = component_list)`.
-
-## Manuscript and practical profiles
-
-`segre_control(profile = "manuscript")` uses the current displayed algorithms:
-sequential residual refresh, fixed component order, fixed RGD step size,
-exact structured T-HOSVD, a fixed sweep cap, and zero RGN ridge. Regression
-inputs are normalized by `sqrt(n)` unless they are already on that scale.
-
-`segre_control(profile = "practical")` makes empirical safeguards explicit:
-decreasing-weight component order, an observable stopping tolerance,
-backtracking for regression RGD, and a small recorded RGN ridge. These settings
-are useful in applications but are not identical to the displayed manuscript
-algorithm.
-
-See `vignette("algorithm-fidelity", package = "SegreCP")` and
-`inst/ALGORITHM_FIDELITY.md` in the source tree for the exact implementation
-boundary.
-
-## Migrating the existing experiment scripts
-
-- Existing regression objects that already store both `X` and `Y` divided by
-  `sqrt(n)` must use `normalize_regression = "none"`; raw observations should
-  use the default `"sqrt_n"` normalization.
-- The active legacy tensor-response implementation stores factors output-first.
-  The package API is input-first, so legacy custom components and explicit CPCA
-  splits must be permuted before they are supplied.
-- Supply `init_split` when exact replay of a legacy CPCA tie choice is required.
-  The package's automatic tie rule is deterministic.
-- Historical Jacobi/simultaneous-update benchmark variants are outside version
-  0.1.1. The package covers the current manuscript and main sequential paths.
-
-## Rebuttal-stage numerical reproducibility
-
-The package documentation reproduces numerical experiments reported as tables
-during the rebuttal. The main seven-method regression vignette does not use the
-former manuscript Figure 1 data. The initializer vignette displays only the
-new rebuttal CPCA-versus-HOSVD ablation; it does not read or publish the old
-figure's image or plotting output.
+The coefficient modes are ordered as input modes followed by output modes;
+here the response has dimensions `c(n, 2, 2)`.
 
 ```r
-vignette("rebuttal-regression-reproducibility", package = "SegreCP")
-vignette("rebuttal-initialization-convergence", package = "SegreCP")
-```
+set.seed(3)
+n <- 60
+input_dims <- c(2, 3)
+output_dims <- c(2, 2)
+X <- matrix(rnorm(n * prod(input_dims)), nrow = n)
+beta_factors <- list(c(1, 0), c(1, 0, 0), c(1, 0), c(1, 0))
+beta <- array(2 * Reduce(kronecker, rev(beta_factors)),
+              dim = c(input_dims, output_dims))
+Y <- array(as.numeric(X %*% matrix(beta, nrow = prod(input_dims))) +
+             rnorm(n * prod(output_dims), sd = 0.05),
+           dim = c(n, output_dims))
 
-The main vignette rebuilds the seven-method tensor-on-tensor regression table
-from 1,680 paired replicate-level records and visualizes the recorded
-checkpoints, high-coherence stress cells, and accuracy--time relationship. The
-second vignette shows CPCA/HOSVD sensitivity, all ten decomposition sweeps, and
-observed-objective convergence for CP-ALS, RGD, and RGN. CP-ALS is read from a
-frozen experiment artifact; it is not a callable package estimator.
-
-To rebuild the rebuttal tables without rerunning the expensive benchmark:
-
-```r
-driver <- system.file(
-  "reproduce", "validate_rebuttal_tables.R", package = "SegreCP"
+fit_tensor <- segre_regress(
+  X, Y, rank = 1, input_dims = input_dims,
+  output_dims = output_dims, method = "rgd", init = "cpca",
+  control = segre_control(max_iter = 5)
 )
-system2(
-  file.path(R.home("bin"), "Rscript"),
-  c(driver, "--output", "rebuttal_table_rebuild")
-)
+dim(coef(fit_tensor))
+dim(predict(fit_tensor, X[1:3, , drop = FALSE]))
 ```
 
-To use only the authors' methods in a repository-level experiment:
+The same calls can use `method = "rgd"` or `"rgn"` and `init = "cpca"` or
+`"hosvd"`. `cp_initialize()` also accepts random starts, a list of CP
+components, or a custom initialization function. See `?segre_decompose`,
+`?segre_regress`, and `?cp_initialize` for the full arguments and return
+values. The [getting-started vignette](vignettes/getting-started.Rmd) runs
+these three tasks and plots an observed-objective convergence trace.
+
+## Tensor inputs
+
+The computational core uses base R numeric arrays. For regression, a numeric
+matrix with one vectorized predictor tensor per row is the most efficient
+representation. The package also accepts arrays with dimensions
+`c(n, input_dims)`, lists of individual tensors, and `rTensor::Tensor`
+objects, converting them at the API boundary. Responses can be a numeric
+vector, matrix, array, `rTensor::Tensor`, or list of tensors as appropriate.
+See the [data-layout vignette](vignettes/regression-data-layout.Rmd) for a
+worked matrix/array/`rTensor` comparison.
+
+## Reproduce the paper's numerical results
+
+The [tensor-regression simulation
+vignette](vignettes/rebuttal-regression-reproducibility.Rmd) reconstructs
+tables and plots from bundled replication-level records. The
+[initialization and convergence
+vignette](vignettes/rebuttal-initialization-convergence.Rmd) visualizes the
+CPCA/HOSVD comparison and optimization trajectories. These vignettes
+recompute summaries from recorded runs; building them does **not** rerun the
+full, expensive multi-method simulations. RGD/RGN and initialization are the
+only supported estimators. Comparison code belongs to the source checkout's
+[`reproducibility/` directory](reproducibility/README.md), not to the
+installed package.
+
+For a new simulation rather than a redraw of stored results, the source
+checkout also includes [fresh RGD/RGN decomposition and tensor-regression
+runners](reproducibility/simulations/README.md). They generate data under the
+rebuttal-stage designs and save fit metrics, convergence traces, random seeds,
+and data fingerprints outside the package directory. They do **not** rerun the
+other five estimators or reproduce hardware-dependent timing values.
+
+The [real-trade vignette](vignettes/real-trade-reproducibility.Rmd) and
+[`reproducibility/real_data/` guide](reproducibility/real_data/README.md)
+explain how to obtain official data into a **private directory**, rebuild and
+check the 2018–2019 analysis inputs, and rerun rank-three RGD/RGN through the
+public package API. Neither raw nor processed third-party trade data are
+distributed. The verified offline source-to-input rebuild and conditional
+RGD/RGN refit are documented in [`inst/VALIDATION.md`](inst/VALIDATION.md).
+A fresh download from every provider and a new fit of the other five methods
+have not been verified. Reproduction scripts require a source checkout;
+`R CMD INSTALL` does not install `reproducibility/`.
+
+## Citation and tests
 
 ```r
-ours <- system.file("scripts", "ours_methods.R", package = "SegreCP")
-source(ours)
-# fit_ours_decomposition(..., method = "RGN", initialization = "cpca")
-# fit_ours_regression(..., method = "RGD", initialization = "hosvd")
+citation("SegreCP")
 ```
 
-The frozen initialization artifact was generated before the code-scope split
-and includes CP-ALS records. Its exact mixed runner remains recoverable from the
-repository-only archived 0.1.0 source tarball and is not installed by version
-0.1.1. Runtime validation uses the well-separated tier order
-`{RGD, RGN} < CP-ALS < HOPLS < TT-IHT < {RRR, Tucker-RGD}`. Absolute seconds
-and the order within the two near-tied pairs are not portability claims. The
-regression initializer rows are reconstructed from frozen rebuttal records; a
-full public-API regression initializer rerun is not claimed here.
-
-## Tests
-
-```r
-testthat::test_local("software/SegreCP")
-```
-
-The tests include the installed-script scope boundary, direct
-tangent-projection and dense normal-equation oracles,
-RGD/RGN equivalence for decomposition, exact structured T-HOSVD comparisons,
-CPCA/HOSVD initialization, data-format parity, input validation, frozen
-rebuttal-table reconstruction, runtime-tier checks, and convergence-history
-contracts.
-
-See [`inst/VALIDATION.md`](inst/VALIDATION.md) for the recorded package-check and
-active-source parity results and
-[`inst/RELEASE_PROVENANCE.md`](inst/RELEASE_PROVENANCE.md) for the exact
-historical-source and public-release boundaries.
+With `testthat` installed, run the package tests from the `SegreCP` source
+directory using `testthat::test_local(".")`. The detailed algorithm-to-paper
+mapping and historical compatibility notes are in
+[`inst/ALGORITHM_FIDELITY.md`](inst/ALGORITHM_FIDELITY.md) and
+[`inst/RELEASE_PROVENANCE.md`](inst/RELEASE_PROVENANCE.md).

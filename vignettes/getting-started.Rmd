@@ -1,0 +1,137 @@
+---
+title: "Getting Started with RGD and RGN"
+vignette: >
+  %\VignetteIndexEntry{Getting Started with RGD and RGN}
+  %\VignetteEngine{knitr::knitr}
+  %\VignetteEncoding{UTF-8}
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(collapse = TRUE, comment = "#>")
+```
+
+`SegreCP` fits CP-rank-constrained tensors using Riemannian gradient descent
+(`"rgd"`) or Riemannian Gauss--Newton (`"rgn"`). The same two methods support
+tensor decomposition, scalar-on-tensor regression, and tensor-on-tensor
+regression. CPCA (`"cpca"`) and HOSVD (`"hosvd"`) are the two spectral starts;
+random and user-supplied starts are available as well.
+
+The examples below are small and self-contained. They illustrate the public
+API, not the paper's full simulation or real-data protocol. Those larger
+experiments have separate reproduction instructions linked at the end.
+
+## CP tensor decomposition and convergence
+
+The observed tensor is a noisy rank-one signal. Its dimensions determine the
+dimensions of each recovered component.
+
+```{r decomposition}
+library(SegreCP)
+
+set.seed(11)
+dims <- c(5L, 6L, 4L)
+factors <- lapply(dims, function(p) {
+  z <- rnorm(p)
+  z / sqrt(sum(z^2))
+})
+truth_components <- cp_components(
+  3, lapply(factors, function(z) matrix(z, ncol = 1L))
+)
+truth <- reconstruct_cp(truth_components)
+observed <- truth + array(rnorm(prod(dims), sd = 0.05), dim = dims)
+
+fit_rgd <- segre_decompose(
+  observed, rank = 1L, method = "rgd", init = "cpca",
+  control = segre_control(max_iter = 6L), keep_history = TRUE
+)
+fit_rgn <- segre_decompose(
+  observed, rank = 1L, method = "rgn", init = "hosvd",
+  control = segre_control(max_iter = 6L), keep_history = TRUE
+)
+dim(reconstruct_cp(fit_rgn))
+cp_relative_error(fit_rgn, truth_components)
+```
+
+`convergence_data()` reports the observed least-squares objective at
+initialization and after each completed sweep. With a known simulated truth,
+it also reports reconstruction error; that oracle error is unavailable on
+ordinary data and need not decrease at every sweep.
+
+```{r convergence, fig.width=6.6, fig.height=4.1, fig.cap="Observed objective relative to initialization for the two methods."}
+rgd_path <- convergence_data(fit_rgd, truth_components)
+rgn_path <- convergence_data(fit_rgn, truth_components)
+stopifnot(all(rgd_path$objective_ratio > 0),
+          all(rgn_path$objective_ratio > 0))
+plot(rgd_path$iteration, rgd_path$objective_ratio, type = "b", log = "y",
+     pch = 16, col = "#D55E00", xlab = "Completed sweep",
+     ylab = "Observed objective / initial objective")
+lines(rgn_path$iteration, rgn_path$objective_ratio, type = "b",
+      pch = 17, col = "#0072B2")
+legend("topright", c("RGD (CPCA)", "RGN (HOSVD)"),
+       col = c("#D55E00", "#0072B2"), pch = c(16, 17),
+       lty = 1, bty = "n")
+```
+
+An `rTensor::Tensor` can replace the base array at the same API boundary:
+
+```{r rtensor}
+tensor_input <- rTensor::as.tensor(observed)
+stopifnot(identical(dim(as_segre_array(tensor_input)), dims))
+```
+
+## Scalar-on-tensor regression
+
+For regression, rows are observations. A matrix with one vectorized
+predictor tensor per row is the most direct representation; an array of
+dimensions `c(n, input_dims)` is also accepted.
+
+```{r scalar-regression}
+set.seed(12)
+n <- 60L
+input_dims <- c(3L, 4L)
+X <- matrix(rnorm(n * prod(input_dims)), nrow = n)
+beta <- 2 * outer(c(1, 0, 0), c(1, 0, 0, 0))
+y <- as.numeric(X %*% as.vector(beta) + rnorm(n, sd = 0.05))
+
+fit_scalar <- segre_regress(
+  X, y, rank = 1L, input_dims = input_dims,
+  method = "rgn", init = "hosvd",
+  control = segre_control(max_iter = 5L)
+)
+dim(coef(fit_scalar))
+head(predict(fit_scalar, X), 3L)
+```
+
+## Tensor-on-tensor regression
+
+The coefficient tensor uses input modes first, then output modes. In this
+example the response has two `2`-dimensional modes.
+
+```{r tensor-regression}
+set.seed(13)
+n <- 50L
+input_dims <- c(2L, 3L)
+output_dims <- c(2L, 2L)
+X <- matrix(rnorm(n * prod(input_dims)), nrow = n)
+beta_factors <- list(c(1, 0), c(1, 0, 0), c(1, 0), c(1, 0))
+beta <- array(2 * Reduce(kronecker, rev(beta_factors)),
+              dim = c(input_dims, output_dims))
+Y <- array(as.numeric(X %*% matrix(beta, nrow = prod(input_dims))) +
+             rnorm(n * prod(output_dims), sd = 0.05),
+           dim = c(n, output_dims))
+
+fit_tensor <- segre_regress(
+  X, Y, rank = 1L, input_dims = input_dims,
+  output_dims = output_dims, method = "rgd", init = "cpca",
+  control = segre_control(max_iter = 5L)
+)
+dim(coef(fit_tensor))
+dim(predict(fit_tensor, X[1:3, , drop = FALSE]))
+```
+
+See `?segre_decompose`, `?segre_regress`, `?cp_initialize`, and
+`?segre_control` for inputs, outputs, and numerical controls. The simulation
+vignettes reconstruct reported tables from bundled run records. Fresh
+RGD/RGN simulation runners and the code-only real-data workflow are in the
+source checkout's `reproducibility/` directory; the real-data values are not
+distributed with the package.

@@ -2,6 +2,10 @@
 
 Date: 2026-08-04
 
+Version-0.1.2 package check update: 2026-10-03.
+Version-0.1.3 source-replay update: 2026-10-03.
+Version-0.1.4 reader-facing package and fresh-simulation update: 2026-10-03.
+
 This record separates package mechanics, executable numerical oracles, frozen
 rebuttal-artifact reconstruction, fresh package reruns, and migration
 comparisons with the active manuscript code. It is not a theorem or proof
@@ -16,7 +20,7 @@ competing optimizer is installed or exported. The sole current comparator
 entry point is repository-only `reproducibility/comparison_methods.R`, which is
 excluded by `.Rbuildignore`.
 
-## Package check
+## Historical version-0.1.1 package check
 
 The source package, including all four vignettes, was built and checked on macOS
 arm64 with R 4.4.3:
@@ -30,6 +34,94 @@ R CMD check --no-manual SegreCP_0.1.1.tar.gz
 Final status: `OK` (0 errors, 0 warnings, 0 notes). All examples, vignettes,
 compiled-code checks, Rd checks, and 156 testthat expectations passed; there
 were no test warnings or skips.
+
+The version-0.1.2 source tarball was built and checked on macOS arm64 with
+R 4.4.3 using `R CMD check --no-manual`. Final status was `OK`: zero errors,
+warnings, or notes; all five vignettes built and all 156 testthat expectations
+passed. The built tarball excludes `reproducibility/` and contains no real
+trade tensors, design rows, or downloaded source files.
+
+The version-0.1.3 source tarball was built and checked on the same platform
+with `R CMD check --no-manual`: final status `OK`, zero package errors,
+warnings, or notes, all five vignettes rebuilt, and all 156 testthat
+expectations passed without skips. A separate source-checkout test parsed the
+12 real-data R scripts, validated all 82 source and four derived manifest rows,
+checked both command-line help modes and package write guards. The detached
+checkout comparator test passed its routing contract and a two-sweep synthetic
+CP-ALS smoke fit. These two repository-only tests are intentionally outside
+the installed package's testthat suite. The source tarball was inspected to
+confirm that no real trade data or `reproducibility/` scripts were included.
+
+The version-0.1.4 source tarball built and passed `R CMD check --no-manual`
+on the same macOS arm64/R 4.4.3 platform: `Status: OK`, zero errors, warnings,
+or notes. All six vignettes rebuilt and all 156 testthat expectations passed
+without skips. In the source checkout, `reproducibility/simulations/tests/smoke.R`
+also passed for both a fresh decomposition fit and a fresh tensor-regression
+fit using the checked 0.1.4 package. These source-only scripts are excluded
+from the tarball; they are not installed estimators.
+The real-data contract check also parsed 13 R scripts and validated all 82
+source and four derived manifest entries; the detached-checkout comparator
+contract and synthetic CP-ALS smoke fit passed.
+
+The new getting-started vignette demonstrates the public decomposition,
+scalar-response regression, tensor-response regression, and convergence APIs
+on self-generated data. The real-trade vignette now accepts a private data
+directory through a source-only reader, rather than asking users to type an
+internal historical dataset label.
+
+## Version-0.1.2 real-trade authors-method replay
+
+The repository-only `reproducibility/real_data/fit_authors_methods.R` was run
+with the installed version-0.1.2 package on the four frozen v3 processed
+inputs. Their recorded SHA-256 hashes matched 4/4. The runner used the frozen
+five folds, 30 complete sweeps, CPCA, and five repetitions per fold, for 50
+RGD/RGN fits. A row-wise comparison with the archived v3 seven-method raw
+record matched all 50 fold-by-repetition-by-method keys. Maximum absolute
+differences were `1.02e-14` for training RMSE, `9.77e-15` for test RMSE,
+`2.00e-15` for training R-squared, and `1.30e-14` for test R-squared. Mean
+test RMSE was 2.700299739447382 for RGD and 2.668389603947836 for RGN,
+matching the archived table to printed precision. Hardware-dependent fit
+seconds were not used as parity criteria. Against the frozen comparator rows,
+RGN remains second and RGD seventh by mean test RMSE; the five comparators
+were not rerun through this package.
+
+This was a fresh package-API replay of the **authors' two methods conditional
+on the frozen processed inputs**, not a fresh seven-method refit. At that
+0.1.2 checkpoint the local source tree lacked the CEPII Gravity ZIP and RDS;
+both were recovered and the upstream replay was validated separately for
+0.1.3 below. The historical sample screen uses 2019 source-availability
+information, so it is not strictly selected using only 2018 information.
+
+## Version-0.1.3 official-source-to-input replay
+
+The missing `Gravity_rds_V202211.zip` was downloaded from the official CEPII
+route, and both its archive and extracted `Gravity_V202211.rds` matched the
+frozen byte sizes and SHA-256 hashes. The RDS is readable (4,699,296 rows,
+87 columns) and has the required 2018 and 2019 observations. It remains in
+the private real-data directory, not in SegreCP source or its tarball.
+
+In an isolated private directory, the repository-only scripts reconstructed
+five reporter-query metadata files from official raw inputs; each was bytewise
+identical to its historical counterpart. A second isolated directory initially
+contained only `raw_official/` and `source_archives/`, with no prebuilt
+metadata or processed outputs. A single `run.R --prepare --offline` command
+checked all 82 frozen official-source content hashes, generated its own query
+metadata, parsed both years of WITS/TRAINS records, and regenerated the
+covariate panel, tensors, selected six-feature design, common folds, and
+registry. All four selected analysis inputs matched the historical files byte
+for byte and by SHA-256. The reconstructed tensors
+had `X = 80 x 25 x 21 x 6` and `Y = 80 x 25 x 21 x 8`; the design had 80 rows
+and six feature columns, and the five folds had 16 exporters each.
+
+This validates a local **frozen-official-source-to-input replay**. Together
+with the separate 50-fit RGD/RGN package-API parity on the exact same input
+bytes, it supports the authors' two-method result chain. It does not show
+that a fresh download from every upstream API still succeeds, nor rerun the
+other five estimators. A fresh full-download test would have to revalidate
+current WITS API availability and response content. The repository-level,
+data-free contract test additionally checks all 82 source and four derived
+manifest rows, script syntax, CLI help, and safeguards against writing private
+data into the package source.
 
 ## Executable package oracles
 
@@ -73,6 +165,48 @@ The final grid's source manifest records the historical solver with SHA-256
 `50ee798a...`. The later active repository solver has changed. Accordingly,
 the package labels this stage as deterministic reconstruction of frozen raw
 records, not as a bitwise fresh rerun from a silently substituted active file.
+
+## Fresh authors-only simulations with the public API
+
+The repository-only `reproducibility/simulations/run_decomposition.R` was run
+for the complete 20-replication, 10-sweep rebuttal decomposition design. Its
+generated-data fingerprints matched the frozen package rerun in all 20
+replications. Its mean objective and error paths matched that package rerun to
+floating-point precision (maximum mean-path discrepancy about `5.6e-17`;
+maximum objective discrepancy about `5.1e-11`). Comparison with the earlier
+historical reference retained the documented HOSVD stability limits: mean
+error-path discrepancy below `1e-3`, iteration-3/5/10 discrepancy below
+`5e-4`, and preserved RGD-versus-RGN checkpoint ranking. The HOSVD branch is
+not claimed to be iterate-by-iterate identical to the historical solver.
+
+The separate `run_tensor_regression.R` generates new data under the frozen
+12-cell tensor-on-tensor design and fits only CPCA-initialized RGD and RGN.
+Default and selected 10-sweep smoke runs succeeded. In checked cells 1 and 7,
+the complete generated-data fingerprints matched the historical records. For
+noisy cell 7, the public CPCA initial tensor differed from the historical one
+by only `1.31e-14` in relative Frobenius norm. The current active manuscript
+solver and the package then produced the same 10-sweep method metrics; the
+frozen seven-method table did not. Its recorded solver hash differs from the
+current source hash. This is evidence of a solver-version difference after
+the historical run, not a data-generation or API mode-order mismatch. The
+exact historical code change is not available here, so the new script is a
+fresh current-method study, **not** pointwise reproduction of the frozen
+regression table or a fresh seven-method benchmark. Compare historical rows
+by coherence, noise, replication, and method; its `cell_id` is not globally
+unique across coherence subruns.
+
+The complete 0.1.4 tensor-regression rerun subsequently finished all 12 cells
+and 20 replications per cell: 480 finite rank-three RGD/RGN fits, each with 10
+sweeps, and 5,280 objective rows. All 240 data and base-data fingerprints
+matched the historical generated-data archive. Relative to the frozen
+RGD/RGN rows, the maximum absolute coefficient-error difference was
+`0.01573823`, and the maximum absolute test-RMSE difference was `0.0002788839`;
+neither is reported as historical parity. The lower mean test-RMSE author
+method agreed in 11 of 12 cells; the sole reversal was a near tie at
+coherence `0.75`, noise standard deviation `0.5`. Three fixed-step RGN paths
+had small observed-objective increases (largest relative to initial loss
+`2.93e-6`), so the fresh regression study does not establish monotonicity of
+every path.
 
 ## Initialization sensitivity and empirical convergence
 

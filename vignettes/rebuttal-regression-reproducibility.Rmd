@@ -1,7 +1,7 @@
 ---
-title: "Reproducing the Rebuttal-Stage Regression Benchmark"
+title: "Tensor Regression Simulation Results"
 vignette: >
-  %\VignetteIndexEntry{Reproducing the Rebuttal-Stage Regression Benchmark}
+  %\VignetteIndexEntry{Tensor Regression Simulation Results}
   %\VignetteEngine{knitr::knitr}
   %\VignetteEncoding{UTF-8}
 ---
