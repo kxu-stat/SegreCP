@@ -73,8 +73,10 @@ table(trade$fold)  # 16 exporters per fold
 ## Refit RGD and RGN
 
 The fitting script uses the registered folds and estimates the feature and
-response transformations separately on each training fold. Run a quick check
-before the full five-fold analysis:
+response transformations separately on each training fold. RGD and RGN share
+one CPCA start computed from the training mean cross-moment `X'Y/n`; both use
+zero ridge and the original training-data loss scale. Run a quick check before
+the full five-fold analysis:
 
 ```sh
 TRADE_DATA_DIR=/absolute/path/to/private-trade-work
@@ -88,12 +90,15 @@ Rscript reproducibility/real_data/fit_authors_methods.R \
   --output-dir="$TRADE_DATA_DIR/authors-results"
 ```
 
-The full command fits rank-three RGD and RGN through the installed `SegreCP`
-API. It writes per-fold accuracy, summaries, objective paths, and the R
-session to the chosen private output directory. The smoke run is an execution
-check, not an accuracy result. A local full run reproduced the recorded
-RGD/RGN test-RMSE and R-squared rows to numerical precision; elapsed times
-depend on the machine.
+The full command uses the accelerated `SegreCP` API (version 0.1.5 or later)
+for 30 iterations. It records train/test RMSE, MAE and R-squared at iterations
+3, 5, 10 and 30, objective paths, controls, fold transformations, shared starts,
+input hashes and the R session in the private output directory. Fit times
+include history recording and exclude preprocessing, shared CPCA and metric
+calculation; the initializer is timed separately. The smoke run is an execution
+check, not an accuracy result. Saved historical results retain their original
+initialization scale and positive ridge; fresh runs use the corrected protocol
+above and write new files.
 
 The paper's selected sample used 2019 WITS tariff availability when screening
 reporters, excluding KOR and MEX. Thus the recorded analysis is not a

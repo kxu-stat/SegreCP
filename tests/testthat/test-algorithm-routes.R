@@ -33,6 +33,13 @@ manual_decomposition_sweep <- function(observed, init, alpha, update_order,
   components
 }
 
+test_that("both profiles default to unregularized RGN", {
+  expect_identical(segre_control()$ridge, 0)
+  expect_identical(segre_control(profile = "practical")$ridge, 0)
+  expect_identical(segre_control(profile = "practical", ridge = 0.01)$ridge,
+                   0.01)
+})
+
 component_arrays <- function(components) {
   lapply(components, function(comp) rank1_array(comp$lambda, comp$U))
 }

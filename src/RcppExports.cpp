@@ -62,6 +62,34 @@ BEGIN_RCPP
     return R_NilValue;
 END_RCPP
 }
+// initialize_decomposition_state_cpp
+List initialize_decomposition_state_cpp(NumericVector observed, List components);
+RcppExport SEXP _SegreCP_initialize_decomposition_state_cpp(SEXP observedSEXP, SEXP componentsSEXP) {
+BEGIN_RCPP
+    Rcpp::RObject rcpp_result_gen;
+    Rcpp::RNGScope rcpp_rngScope_gen;
+    Rcpp::traits::input_parameter< NumericVector >::type observed(observedSEXP);
+    Rcpp::traits::input_parameter< List >::type components(componentsSEXP);
+    rcpp_result_gen = Rcpp::wrap(initialize_decomposition_state_cpp(observed, components));
+    return rcpp_result_gen;
+END_RCPP
+}
+// rgd_sweep_gs_batch_cpp
+List rgd_sweep_gs_batch_cpp(NumericVector residual, List cache_list, List components, IntegerVector order_i, double alpha, Nullable<NumericVector> previous_objective);
+RcppExport SEXP _SegreCP_rgd_sweep_gs_batch_cpp(SEXP residualSEXP, SEXP cache_listSEXP, SEXP componentsSEXP, SEXP order_iSEXP, SEXP alphaSEXP, SEXP previous_objectiveSEXP) {
+BEGIN_RCPP
+    Rcpp::RObject rcpp_result_gen;
+    Rcpp::RNGScope rcpp_rngScope_gen;
+    Rcpp::traits::input_parameter< NumericVector >::type residual(residualSEXP);
+    Rcpp::traits::input_parameter< List >::type cache_list(cache_listSEXP);
+    Rcpp::traits::input_parameter< List >::type components(componentsSEXP);
+    Rcpp::traits::input_parameter< IntegerVector >::type order_i(order_iSEXP);
+    Rcpp::traits::input_parameter< double >::type alpha(alphaSEXP);
+    Rcpp::traits::input_parameter< Nullable<NumericVector> >::type previous_objective(previous_objectiveSEXP);
+    rcpp_result_gen = Rcpp::wrap(rgd_sweep_gs_batch_cpp(residual, cache_list, components, order_i, alpha, previous_objective));
+    return rcpp_result_gen;
+END_RCPP
+}
 // modewise_design_fibres_cpp
 List modewise_design_fibres_cpp(NumericMatrix X, List Ulist);
 RcppExport SEXP _SegreCP_modewise_design_fibres_cpp(SEXP XSEXP, SEXP UlistSEXP) {
@@ -80,6 +108,8 @@ static const R_CallMethodDef CallEntries[] = {
     {"_SegreCP_rgd_step_fused_cpp", (DL_FUNC) &_SegreCP_rgd_step_fused_cpp, 5},
     {"_SegreCP_make_rank1_vec_cpp", (DL_FUNC) &_SegreCP_make_rank1_vec_cpp, 2},
     {"_SegreCP_update_rank1_cache_inplace_cpp", (DL_FUNC) &_SegreCP_update_rank1_cache_inplace_cpp, 4},
+    {"_SegreCP_initialize_decomposition_state_cpp", (DL_FUNC) &_SegreCP_initialize_decomposition_state_cpp, 2},
+    {"_SegreCP_rgd_sweep_gs_batch_cpp", (DL_FUNC) &_SegreCP_rgd_sweep_gs_batch_cpp, 6},
     {"_SegreCP_modewise_design_fibres_cpp", (DL_FUNC) &_SegreCP_modewise_design_fibres_cpp, 2},
     {NULL, NULL, 0}
 };

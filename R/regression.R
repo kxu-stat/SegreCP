@@ -144,15 +144,33 @@ segre_regress <- function(
   normalization <- if (control$normalize_regression == "sqrt_n") {
     1 / sqrt(design$n)
   } else 1
-  X_work <- X_original * normalization
-  Y_work <- Y_original * normalization
+  X_work <- if (normalization == 1 && is.double(X_original)) X_original else
+    X_original * normalization
+  Y_work <- if (normalization == 1 && is.double(Y_original)) Y_original else
+    Y_original * normalization
 
-  moment <- .coefficient_moment(
-    X_work, Y_work, input_dims, output_dims, design_variance
-  )
-  initialization <- .resolve_initialization(
-    moment, rank, init, init_split, seed, init_args
-  )
+  if (is.list(init)) {
+    if (!is.list(init_args)) stop("`init_args` must be a list.", call. = FALSE)
+    # Supplied components use only the coefficient dimensions, not X'Y.
+    # Retain cp_initialize's argument matching and first validation pass.
+    initialize_components <- function(x, rank, method, split = NULL,
+                                      seed = NULL,
+                                      project_random_weights = TRUE, ...) {
+      list(comps = .validate_components(method, public_dims, rank),
+           method = "custom_components")
+    }
+    initialization <- do.call(initialize_components, c(
+      list(x = NULL, rank = rank, method = init, split = init_split,
+           seed = seed), init_args
+    ))
+  } else {
+    moment <- .coefficient_moment(
+      X_work, Y_work, input_dims, output_dims, design_variance
+    )
+    initialization <- .resolve_initialization(
+      moment, rank, init, init_split, seed, init_args
+    )
+  }
   public_components <- .validate_components(
     initialization$comps, public_dims, rank
   )
@@ -256,12 +274,11 @@ segre_regress <- function(
         } else {
           statistics <- .tensor_tangent_statistics(
             X_work, target, old_component$U, internal_dims, output_order,
-            include_gram = TRUE
+            include_gram = TRUE, full_gram = FALSE
           )
           coordinates <- .solve_tensor_tangent(statistics, control$ridge)
-          joint <- c(1L, if (statistics$df_in > 1L)
-            (statistics$df_out + 1L):length(coordinates) else integer())
-          joint_gram <- statistics$gram_in +
+          joint_gram <- statistics$gram_in
+          if (control$ridge > 0) joint_gram <- joint_gram +
             control$ridge * diag(statistics$df_in)
           normal_condition[iteration, i] <- kappa(joint_gram, exact = FALSE)
         }
@@ -312,9 +329,12 @@ segre_regress <- function(
   public_components <- .validate_components(
     public_components, public_dims, rank
   )
-  fitted_values <- Reduce(`+`, lapply(components, function(comp) {
-    .apply_rank1_operator(comp, X_original, split)$prediction
-  }))
+  # Re-sum component predictions, rather than the incrementally updated sum,
+  # to preserve the original final summation order without rescanning X.
+  fitted_values <- if (normalization == 1) Reduce(`+`, predictions) else
+    Reduce(`+`, lapply(components, function(comp) {
+      .apply_rank1_operator(comp, X_original, split)$prediction
+    }))
   residual_values <- Y_original - fitted_values
 
   structure(list(

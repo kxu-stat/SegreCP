@@ -34,8 +34,8 @@ segre_control(
 \item{component_order}{\code{"fixed"} or \code{"decreasing_weight"}. \code{NULL} uses the
 profile default.}
 
-\item{ridge}{Nonnegative RGN ridge. A positive value defines stabilized,
-regularized RGN rather than the manuscript's unregularized normal equation.}
+\item{ridge}{Nonnegative RGN ridge. \code{NULL} selects zero in both profiles.
+A positive value adds ridge regularization to the RGN normal equation.}
 
 \item{normalize_regression}{If \code{"sqrt_n"}, divide both the design and response
 by \code{sqrt(n)} before fitting. Use \code{"none"} for data already expressed in the
@@ -49,10 +49,9 @@ normalized-operator convention.}
 A \code{segre_control} object.
 }
 \description{
-The \code{"manuscript"} profile follows the displayed algorithms: sequential
-Gauss--Seidel residual refresh, fixed component order, fixed RGD step size,
-exact structured T-HOSVD retraction, a fixed iteration cap, and no RGN ridge.
-The \code{"practical"} profile enables weight-based component ordering, an
-observable loss-change stopping rule, regression RGD backtracking, and a
-small explicitly recorded RGN ridge.
+The \code{"manuscript"} profile uses sequential Gauss--Seidel component updates,
+fixed component order and RGD step size, exact structured T-HOSVD retraction,
+and a fixed iteration cap. The \code{"practical"} profile enables weight-based
+component ordering, a loss-change stopping rule, and regression RGD backtracking.
+Both profiles default to \code{ridge = 0}.
 }

@@ -1,52 +1,33 @@
 #!/usr/bin/env Rscript
-
-# Run both fresh authors-method simulations in new temporary directories.
-args <- commandArgs(trailingOnly = FALSE)
-file_arg <- grep("^--file=", args, value = TRUE)
-if (length(file_arg) != 1L) stop("Run this test with Rscript.")
-this_file <- normalizePath(sub("^--file=", "", file_arg))
-runner <- normalizePath(file.path(dirname(this_file), "..",
-                                  "run_decomposition.R"))
-output <- tempfile("segrecp-decomposition-smoke-")
-status <- system2(file.path(R.home("bin"), "Rscript"),
-                  c(shQuote(runner), paste0("--output-dir=", shQuote(output))))
-if (status != 0L) stop("Fresh decomposition smoke run failed.")
-path <- utils::read.csv(file.path(output, "trajectory.csv"))
-terminal <- utils::read.csv(file.path(output, "terminal_accuracy.csv"))
-checks <- utils::read.csv(file.path(output, "validation_checks.csv"))
-comparison <- utils::read.csv(file.path(output, "reference_comparison.csv"))
-stopifnot(nrow(path) == 16L, nrow(terminal) == 4L,
-          all(checks$passed),
-          nrow(comparison) == 1L, comparison$matched_rows == 16L,
-          is.finite(comparison$cpca_max_absolute_error_difference),
-          !is.na(comparison$checkpoint_rgd_rgn_rank_preserved),
-          identical(sort(unique(path$method)), c("RGD", "RGN")),
-          identical(sort(unique(path$initialization)), c("CPCA", "HOSVD")),
-          identical(sort(unique(path$iteration)), 0:3))
-cat("Fresh authors-only decomposition smoke test passed.\n")
-cat("Output: ", output, "\n", sep = "")
-
-regression_runner <- normalizePath(file.path(dirname(this_file), "..",
-                                              "run_tensor_regression.R"))
-regression_output <- tempfile("segrecp-regression-smoke-")
-regression_status <- system2(
-  file.path(R.home("bin"), "Rscript"),
-  c(shQuote(regression_runner),
-    paste0("--output-dir=", shQuote(regression_output)))
-)
-if (regression_status != 0L) {
-  stop("Fresh tensor-regression smoke run failed.")
+script <- normalizePath(sub("^--file=", "", grep("^--file=", commandArgs(), value = TRUE)))
+directory <- normalizePath(file.path(dirname(script), ".."))
+for (task in c("decomposition", "regression")) {
+  output <- tempfile(paste0("segrecp-", task, "-signal4-smoke-"))
+  runner <- file.path(directory, if (task == "decomposition") "run_decomposition.R" else "run_tensor_regression.R")
+  status <- system2(file.path(R.home("bin"), "Rscript"),
+    c(shQuote(runner), paste0("--output-dir=", shQuote(output))))
+  stopifnot(status == 0L)
+  settings <- readRDS(file.path(output, "settings.rds"))
+  paths <- utils::read.csv(file.path(output, "trajectories.csv"))
+  fits <- utils::read.csv(file.path(output, "fits.csv"))
+  inputs <- utils::read.csv(file.path(output, "inputs.csv"))
+  stopifnot(settings$study == "signal4_formal20", settings$signal_multiplier == 4,
+    settings$ridge == 0, settings$master_seed == 741103000L,
+    settings$component_order == "decreasing_weight", settings$rank == 3L,
+    settings$coherence == .5, settings$kappa == 30,
+    nrow(paths) == 4L * (settings$iterations + 1L), nrow(fits) == 4L,
+    all(fits$ridge == 0), all(fits$actual_iterations == settings$iterations),
+    all(fits$engine == settings$engine), all(fits$stopping_reason == "max_iter"),
+    identical(sort(unique(paths$noise_sd)), c(0L, 1L)),
+    identical(sort(unique(paths$method)), c("RGD", "RGN")),
+    all(is.finite(paths$relative_recovery_error)), all(is.finite(paths$objective)),
+    all(nchar(inputs$sha256) == 64L))
+  for (path in list.files(file.path(output, "fits"), full.names = TRUE)) {
+    fit <- readRDS(path)
+    stopifnot(length(fit$component_history) == settings$iterations + 1L,
+              fit$control$ridge == 0)
+  }
+  if (task == "regression") stopifnot(all(is.finite(paths$train_RMSE)),
+    all(is.finite(paths$test_RMSE)), all(is.finite(paths$clean_test_RMSE)))
+  cat("PASS: ", task, " signal4 paired smoke; results: ", output, "\n", sep = "")
 }
-metrics <- utils::read.csv(file.path(regression_output,
-                                     "authors_regression_metrics.csv"))
-objectives <- utils::read.csv(file.path(regression_output,
-                                        "authors_regression_objective.csv"))
-stopifnot(
-  nrow(metrics) == 2L, nrow(objectives) == 6L,
-  identical(sort(metrics$method), c("RGD", "RGN")),
-  identical(sort(unique(objectives$iteration)), 0:2),
-  all(is.finite(metrics$coefficient_error)),
-  all(is.finite(objectives$objective))
-)
-cat("Fresh authors-only tensor-regression smoke test passed.\n")
-cat("Output: ", regression_output, "\n", sep = "")

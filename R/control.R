@@ -1,11 +1,10 @@
 #' Control RGD and RGN fitting
 #'
-#' The `"manuscript"` profile follows the displayed algorithms: sequential
-#' Gauss--Seidel residual refresh, fixed component order, fixed RGD step size,
-#' exact structured T-HOSVD retraction, a fixed iteration cap, and no RGN ridge.
-#' The `"practical"` profile enables weight-based component ordering, an
-#' observable loss-change stopping rule, regression RGD backtracking, and a
-#' small explicitly recorded RGN ridge.
+#' The `"manuscript"` profile uses sequential Gauss--Seidel component updates,
+#' fixed component order and RGD step size, exact structured T-HOSVD retraction,
+#' and a fixed iteration cap. The `"practical"` profile enables weight-based
+#' component ordering, a loss-change stopping rule, and regression RGD backtracking.
+#' Both profiles default to `ridge = 0`.
 #'
 #' @param profile `"manuscript"` or `"practical"`.
 #' @param max_iter Maximum number of complete component sweeps.
@@ -15,8 +14,8 @@
 #'   `"exact_quadratic"`. `NULL` uses a profile/task-specific default.
 #' @param component_order `"fixed"` or `"decreasing_weight"`. `NULL` uses the
 #'   profile default.
-#' @param ridge Nonnegative RGN ridge. A positive value defines stabilized,
-#'   regularized RGN rather than the manuscript's unregularized normal equation.
+#' @param ridge Nonnegative RGN ridge. `NULL` selects zero in both profiles.
+#'   A positive value adds ridge regularization to the RGN normal equation.
 #' @param normalize_regression If `"sqrt_n"`, divide both the design and response
 #'   by `sqrt(n)` before fitting. Use `"none"` for data already expressed in the
 #'   normalized-operator convention.
@@ -48,7 +47,7 @@ segre_control <- function(
   }
   component_order <- match.arg(component_order,
                                c("fixed", "decreasing_weight"))
-  if (is.null(ridge)) ridge <- if (profile == "manuscript") 0 else 1e-8
+  if (is.null(ridge)) ridge <- 0
   if (length(tolerance) != 1L || !is.finite(tolerance) || tolerance < 0) {
     stop("`tolerance` must be one nonnegative finite number.", call. = FALSE)
   }

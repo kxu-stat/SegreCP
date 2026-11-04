@@ -11,24 +11,30 @@ knitr::opts_chunk$set(collapse = TRUE, comment = "#>")
 library(SegreCP)
 ```
 
-`SegreCP` implements sequential component updates on the Segre manifold. A
-component is changed, its residual contribution is refreshed immediately, and
-the next component sees that new residual. Every tangent proposal uses the
-exact rank-`(1, ..., 1)` T-HOSVD retraction.
+`SegreCP` implements sequential component updates on the Segre manifold. Each
+update includes the preceding component updates in the same iteration. Every
+tangent proposal uses the exact rank-`(1, ..., 1)` T-HOSVD retraction.
+
+The batched decomposition path corrects contractions for preceding component
+updates and refreshes the dense residual in one pass. Direct residual updates
+are used near numerical precision.
+Regression RGN uses the input/output structure of the tangent normal equations
+to form only the blocks needed by the solver. Supplying initial components also
+avoids computing an unused cross-moment.
 
 ## Two explicit profiles
 
-The manuscript profile fixes component order and RGD step size, runs the
-requested number of full sweeps unless an explicit tolerance is supplied, and
-uses no RGN ridge.
+The manuscript profile fixes component order and RGD step size and runs the
+requested number of full iterations unless an explicit tolerance is supplied.
 
 ```{r}
 segre_control(profile = "manuscript", max_iter = 20)
 ```
 
-The practical profile orders components by current weight, enables an
-observable loss-change tolerance, uses backtracking for regression RGD, and
-records a small RGN ridge.
+The practical profile orders components by current weight, enables a
+loss-change tolerance, and uses backtracking for regression RGD. Both profiles
+default to `ridge = 0`; a positive `ridge` can be supplied explicitly for
+regularized RGN.
 
 ```{r}
 segre_control(profile = "practical", max_iter = 20)

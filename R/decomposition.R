@@ -56,16 +56,19 @@ segre_decompose <- function(
          call. = FALSE)
   }
 
-  initialization <- .resolve_initialization(
-    x, rank, init, init_split, seed, init_args
-  )
+  initialization <- if (is.list(init) && is.list(init_args) && !length(init_args)) {
+    # x has already been validated. Custom components need only its dimensions.
+    list(comps = .validate_components(init, dim(x), rank),
+         method = "custom_components")
+  } else .resolve_initialization(x, rank, init, init_split, seed, init_args)
   components <- .validate_components(initialization$comps, dim(x), rank)
   component_history <- if (keep_history) list(components) else NULL
-  caches <- lapply(components, function(comp) .rank1_vector(comp$lambda, comp$U))
-  residual <- array(Reduce(`+`, caches) - as.numeric(x), dim = dim(x))
+  state <- initialize_decomposition_state_cpp(x, components)
+  caches <- state$caches
+  residual <- state$residual
 
   objective <- numeric(control$max_iter + 1L)
-  objective[[1L]] <- 0.5 * sum(residual * residual)
+  objective[[1L]] <- state$objective
   accepted_steps <- matrix(NA_real_, control$max_iter, rank)
   converged <- FALSE
   stopping_reason <- "max_iter"
@@ -73,44 +76,44 @@ segre_decompose <- function(
 
   for (iteration in seq_len(control$max_iter)) {
     order_i <- .component_update_order(components, control)
-    for (i in order_i) {
+    batch <- NULL
+    if (method != "rgd" || control$step_rule != "backtracking") {
       alpha <- if (method == "rgn") 1 else .step_at(control, iteration)
+      batch <- rgd_sweep_gs_batch_cpp(
+        residual, caches, components, as.integer(order_i), alpha,
+        objective[[iteration]]
+      )
+      components <- batch$components
+      accepted_steps[iteration, order_i] <- alpha
+    } else for (i in order_i) {
+      alpha <- .step_at(control, iteration)
       old_comp <- components[[i]]
       old_cache <- caches[[i]]
 
-      if (method == "rgd" && control$step_rule == "backtracking") {
-        loss_old <- 0.5 * sum(residual * residual)
-        projected <- tangent_proj_cpp(residual, old_comp$U)
-        gradient_norm_sq <- sum(projected * projected)
-        best <- list(comp = old_comp, loss = loss_old, step = 0)
-        for (attempt in seq_len(control$max_backtracks)) {
-          proposal <- rgd_step_fused_cpp(
-            residual, old_comp$U, old_comp$lambda, alpha, 0L
-          )
-          new_comp <- .canonicalize_component(
-            list(lambda = proposal$lambda, U = proposal$U)
-          )
-          new_cache <- .rank1_vector(new_comp$lambda, new_comp$U)
-          candidate <- residual + array(new_cache - old_cache, dim = dim(x))
-          loss_new <- 0.5 * sum(candidate * candidate)
-          if (loss_new < best$loss) {
-            best <- list(comp = new_comp, loss = loss_new, step = alpha)
-          }
-          if (loss_new <= loss_old - control$armijo * alpha * gradient_norm_sq) {
-            break
-          }
-          alpha <- alpha * control$backtrack_factor
-        }
-        new_comp <- best$comp
-        alpha <- best$step
-      } else {
+      loss_old <- 0.5 * sum(residual * residual)
+      projected <- tangent_proj_cpp(residual, old_comp$U)
+      gradient_norm_sq <- sum(projected * projected)
+      best <- list(comp = old_comp, loss = loss_old, step = 0)
+      for (attempt in seq_len(control$max_backtracks)) {
         proposal <- rgd_step_fused_cpp(
           residual, old_comp$U, old_comp$lambda, alpha, 0L
         )
         new_comp <- .canonicalize_component(
           list(lambda = proposal$lambda, U = proposal$U)
         )
+        new_cache <- .rank1_vector(new_comp$lambda, new_comp$U)
+        candidate <- residual + array(new_cache - old_cache, dim = dim(x))
+        loss_new <- 0.5 * sum(candidate * candidate)
+        if (loss_new < best$loss) {
+          best <- list(comp = new_comp, loss = loss_new, step = alpha)
+        }
+        if (loss_new <= loss_old - control$armijo * alpha * gradient_norm_sq) {
+          break
+        }
+        alpha <- alpha * control$backtrack_factor
       }
+      new_comp <- best$comp
+      alpha <- best$step
 
       if (!is.finite(new_comp$lambda) ||
           new_comp$lambda <= .Machine$double.eps) {
@@ -124,7 +127,8 @@ segre_decompose <- function(
       accepted_steps[iteration, i] <- alpha
     }
 
-    objective[[iteration + 1L]] <- 0.5 * sum(residual * residual)
+    objective[[iteration + 1L]] <- if (is.null(batch))
+      0.5 * sum(residual * residual) else batch$objective
     if (keep_history) {
       component_history[[iteration + 1L]] <- components
     }

@@ -49,6 +49,11 @@ for decomposition and both regression tasks, including a convergence plot.
 Base R arrays and `rTensor::Tensor` inputs are supported; see the
 [data-layout vignette](vignettes/regression-data-layout.Rmd).
 
+The solvers retain exact T-HOSVD retractions and sequential updates while
+reusing tensor contractions and structured regression solves. Different tensor
+orders, CP ranks, and unequal mode dimensions are supported. Both control
+profiles default to `ridge = 0`.
+
 ## Numerical experiments
 
 The repository separates new algorithm runs from figures and tables computed

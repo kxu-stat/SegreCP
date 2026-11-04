@@ -67,14 +67,14 @@ comparison_repository_root <- function() {
   candidates <- .comparison_ancestors(comparison_repository_root())
   package_marker <- file.path(candidates, "software", "SegreCP",
                               "DESCRIPTION")
-  worker <- file.path(candidates, "rgn_benchmark",
-                      "run_tensor_on_tensor_baseline_grid.R")
+  worker <- file.path(candidates, "experiments", "current_package",
+                      "regression_adapters.R")
   hit <- which(file.exists(package_marker) & file.exists(worker))
   if (!length(hit)) {
     stop(
       "The tensor-regression comparison grid requires the complete manuscript ",
-      "repository, including rgn_benchmark/",
-      "run_tensor_on_tensor_baseline_grid.R. The standalone SegreCP checkout ",
+      "repository, including experiments/current_package/",
+      "regression_adapters.R. The standalone SegreCP checkout ",
       "supports the CP-ALS decomposition comparison in this script only.",
       call. = FALSE
     )
@@ -97,14 +97,14 @@ comparison_method_catalog <- function() {
       "tensor regression", "tensor regression"
     ),
     method = c(
-      "CP-ALS", "Orth-ALS", "ICO", "CP-ALS", "CP-RRR", "Tucker-RGD",
+      "CP-ALS", "Orth-ALS", "ICO", "CP-ALS", "RRR", "Tucker-RGD",
       "TT-IHT", "HOPLS"
     ),
     repository_worker = c(
       "reproducibility/comparison_methods.R",
       "rgn_benchmark_decomp/run_worker_decomp.R",
       "rgn_benchmark_decomp/run_worker_decomp.R",
-      rep("rgn_benchmark/run_tensor_on_tensor_baseline_grid.R", 5L)
+      rep("experiments/current_package/regression_adapters.R", 5L)
     ),
     required_checkout = c("SegreCP source checkout",
                           rep("complete manuscript repository", 7L)),
@@ -220,26 +220,46 @@ fit_comparison_cp_als <- function(
   )
 }
 
-#' Launch the rebuttal-stage tensor-regression comparator grid
+#' Fit a regression comparator with the current unregularized adapters
 #'
-#' Only comparison methods are requested.  RGD and RGN are intentionally absent
-#' from the `--methods` argument; their experiment-facing entry point is the
-#' package script.  Set `execute = FALSE` to inspect the exact command without
-#' starting an expensive benchmark.
+#' These experiment-only methods require the manuscript workspace. All normal
+#' equations and coefficient penalties use zero ridge; RRR keeps its native
+#' initialization with a seed separate from data generation.
+fit_comparison_tensor_regression <- local({
+  adapters <- NULL
+  function(method, X, Y, input_dims, output_dims, rank, initialization,
+           iterations = 10L, seed = 1L) {
+    if (is.null(adapters)) {
+      code <- file.path(.comparison_manuscript_root(), "experiments",
+                        "current_package")
+      adapters <<- new.env(parent = globalenv())
+      sys.source(file.path(code, "regression_adapters.R"), envir = adapters)
+      sys.source(file.path(code, "regression_trajectories.R"), envir = adapters)
+    }
+    options <- adapters$regression_trajectory_options()
+    options$rrr_seed <- seed + 1000000L
+    adapters$fit_regression_method(
+      method, X, Y, input_dims, output_dims, rank = rank,
+      shared_init = initialization, iterations = iterations,
+      seed = seed, ridge = 0, options = options
+    )
+  }
+})
+
+#' Launch the current zero-ridge tensor-regression comparison
+#'
+#' Set `execute = FALSE` to inspect the command. The separate comparison runner
+#' shares the authors-method simulation design and uses the current adapters.
 run_tensor_regression_comparisons <- function(
     extra_args = character(),
     execute = FALSE) {
-  root <- .comparison_manuscript_root()
+  .comparison_manuscript_root()
   runner <- file.path(
-    root, "rgn_benchmark", "run_tensor_on_tensor_baseline_grid.R"
-  )
-  methods <- paste(
-    c("CP-ALS", "CP-RRR", "Tucker-RGD", "TT-IHT", "HOPLS"),
-    collapse = ","
+    comparison_repository_root(), "reproducibility", "simulations",
+    "run_comparisons.R"
   )
   command <- c(
     runner,
-    "--methods", methods,
     as.character(extra_args)
   )
   if (!isTRUE(execute)) {

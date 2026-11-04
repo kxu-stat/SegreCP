@@ -22,7 +22,7 @@ usage <- paste(
   "Refit the rank-three RGD/RGN trade analysis on the four prepared inputs.",
   "The data directory is outside the package source tree; --check-inputs",
   "checks the inputs without fitting. --smoke runs one",
-  "fold, one repetition, and one sweep; it is not a paper result.",
+  "fold, one repetition, and one iteration; it is not a paper result.",
   sep = "\n"
 )
 if (identical(args, "--help")) {
@@ -50,7 +50,7 @@ if (check_only && smoke) {
 if (smoke && any(vapply(args, function(arg) {
   any(startsWith(arg, c("--folds=", "--repetitions=")))
 }, logical(1L)))) {
-  stop("Smoke mode always runs fold 1 once for one sweep.", call. = FALSE)
+  stop("Smoke mode always runs fold 1 once for one iteration.", call. = FALSE)
 }
 data_dir <- arg_value("--data-dir=", Sys.getenv("SEGRECP_REAL_DATA_DIR"))
 if (!nzchar(data_dir)) {
@@ -196,6 +196,7 @@ input_record <- data.frame(
 )
 input_digest <- vapply(inputs, digest::digest, character(1L),
                        algo = "sha256", file = TRUE)
+input_record$sha256 <- unname(input_digest)
 reference_path <- file.path(dirname(script_path), "reference_derived_sha256.csv")
 if (!file.exists(reference_path)) {
   stop("Missing reference for the four prepared inputs: ", reference_path,
@@ -223,8 +224,10 @@ prefix <- if (smoke) "authors_methods_smoke" else "authors_methods"
 output_files <- stats::setNames(
   file.path(output_dir, paste0(prefix, "_",
                                c("per_fold.csv", "summary.csv", "objective.csv",
-                                 "inputs.csv", "session.txt"))),
-  c("per_fold", "summary", "objective", "inputs", "session")
+                                 "checkpoints.csv", "settings.rds", "inputs.csv",
+                                 "session.txt"))),
+  c("per_fold", "summary", "objective", "checkpoints", "settings", "inputs",
+    "session")
 )
 existing_outputs <- output_files[file.exists(output_files)]
 if (length(existing_outputs)) {
@@ -233,8 +236,10 @@ if (length(existing_outputs)) {
        ". Choose a new --output-dir to preserve the previous run.",
        call. = FALSE)
 }
-if (!requireNamespace("SegreCP", quietly = TRUE)) {
-  stop("Install SegreCP before fitting the authors' methods.", call. = FALSE)
+if (!requireNamespace("SegreCP", quietly = TRUE) ||
+    utils::packageVersion("SegreCP") < numeric_version("0.1.5")) {
+  stop("Install SegreCP 0.1.5 or later before fitting the authors' methods.",
+       call. = FALSE)
 }
 
 # Standardize features and center responses within each training fold; the
@@ -246,6 +251,7 @@ if (requireNamespace("RhpcBLASctl", quietly = TRUE)) {
   RhpcBLASctl::omp_set_num_threads(1L)
 }
 iterations <- if (smoke) 1L else 30L
+checkpoints <- if (smoke) 1L else c(3L, 5L, 10L, 30L)
 fold_text <- arg_value("--folds=", "1,2,3,4,5")
 repetition_text <- arg_value("--repetitions=", "1")
 if (!smoke && (!grepl("^[1-5](,[1-5])*$", fold_text) ||
@@ -266,12 +272,14 @@ if (!length(folds_to_run) || anyNA(folds_to_run) ||
 control <- SegreCP::segre_control(
   profile = "practical", max_iter = iterations, tolerance = 0,
   step_size = 0.5, step_rule = "backtracking",
-  component_order = "decreasing_weight", ridge = 1e-6,
+  component_order = "decreasing_weight", ridge = 0,
   normalize_regression = "none"
 )
 
 rows <- list()
 paths <- list()
+checkpoint_rows <- list()
+fold_settings <- list()
 position <- 0L
 for (fold in folds_to_run) {
   test_id <- which(fold_id == fold)
@@ -287,6 +295,19 @@ for (fold in folds_to_run) {
   Yte <- sweep(Y[test_id, , , , drop = FALSE], 4L, y_mean, "-")
   Ytr_matrix <- matrix(as.numeric(Ytr), nrow = length(train_id))
   Yte_matrix <- matrix(as.numeric(Yte), nrow = length(test_id))
+  # CPCA uses X'Y/n; the solver retains the original training-data loss scale.
+  initialization_seconds <- system.time({
+    moment <- array(crossprod(Xtr / sqrt(nrow(Xtr)),
+                              Ytr_matrix / sqrt(nrow(Xtr))),
+                    dim = c(6L, 25L, 21L, 8L))
+    initial <- SegreCP::cp_initialize(moment, rank = 3L, method = "cpca",
+                                     split = c(1L, 2L), seed = 2549L)
+  })[["elapsed"]]
+  fold_settings[[as.character(fold)]] <- list(
+    train_id = train_id, test_id = test_id, x_mean = x_mean, x_sd = x_sd,
+    y_mean = y_mean, initialization = initial,
+    initialization_seconds = as.numeric(initialization_seconds)
+  )
 
   for (rep_id in seq_len(repetitions)) {
     # Rotate method order across repeats to reduce systematic timing bias.
@@ -296,12 +317,12 @@ for (fold in folds_to_run) {
       fit <- SegreCP::segre_regress(
         X = Xtr, Y = Ytr, rank = 3L, input_dims = 6L,
         output_dims = c(25L, 21L, 8L), method = tolower(method),
-        init = "cpca", init_split = c(1L, 2L), design_variance = 1,
-        control = control, keep_history = FALSE
+        init = initial$comps, design_variance = 1,
+        control = control, keep_history = TRUE
       )
     })[["elapsed"]]
     if (fit$iterations != iterations) {
-      stop(method, " did not complete the requested sweeps in fold ", fold,
+      stop(method, " did not complete the requested iterations in fold ", fold,
            call. = FALSE)
     }
     fitted_train <- matrix(as.numeric(predict(fit, Xtr)), nrow = length(train_id))
@@ -319,6 +340,7 @@ for (fold in folds_to_run) {
       n_train = length(train_id), n_test = length(test_id),
       train_rmse = sqrt(mean(train_error^2)),
       test_rmse = sqrt(mean(test_error^2)),
+      train_mae = mean(abs(train_error)), test_mae = mean(abs(test_error)),
       train_r2 = 1 - sum(train_error^2) / sum(Ytr_matrix^2),
       test_r2 = 1 - sum(test_error^2) / sum(Yte_matrix^2),
       fit_seconds = as.numeric(elapsed), package_version =
@@ -330,7 +352,20 @@ for (fold in folds_to_run) {
       path[, c("iteration", "objective", "objective_ratio")],
       check.names = FALSE
     )
-    message(sprintf("fold %d repeat %d %s: test RMSE %.6f (%d sweeps)",
+    checkpoint_rows[[position]] <- do.call(rbind, lapply(checkpoints, function(k) {
+      coefficient <- matrix(SegreCP::reconstruct_cp(
+        fit$component_history[[k + 1L]]), nrow = ncol(Xtr))
+      train_error <- Ytr_matrix - Xtr %*% coefficient
+      test_error <- Yte_matrix - Xte %*% coefficient
+      data.frame(
+        fold = fold, repetition = rep_id, method = method, iteration = k,
+        train_rmse = sqrt(mean(train_error^2)), test_rmse = sqrt(mean(test_error^2)),
+        train_mae = mean(abs(train_error)), test_mae = mean(abs(test_error)),
+        train_r2 = 1 - sum(train_error^2) / sum(Ytr_matrix^2),
+        test_r2 = 1 - sum(test_error^2) / sum(Yte_matrix^2)
+      )
+    }))
+    message(sprintf("fold %d repeat %d %s: test RMSE %.6f (%d iterations)",
                     fold, rep_id, method, rows[[position]]$test_rmse,
                     fit$iterations))
     }
@@ -339,7 +374,8 @@ for (fold in folds_to_run) {
 
 per_fold <- do.call(rbind, rows)
 objective <- do.call(rbind, paths)
-accuracy_columns <- c("train_rmse", "test_rmse", "train_r2", "test_r2")
+accuracy_columns <- c("train_rmse", "test_rmse", "train_mae", "test_mae",
+                      "train_r2", "test_r2")
 repeat_groups <- split(per_fold, interaction(per_fold$fold, per_fold$method),
                        drop = TRUE)
 if (any(vapply(repeat_groups, function(x) {
@@ -359,6 +395,7 @@ summary <- do.call(rbind, lapply(split(fold_accuracy, fold_accuracy$method), fun
     se_test_rmse = if (nrow(x) > 1L) sd(x$test_rmse) / sqrt(nrow(x)) else NA_real_,
     mean_test_r2 = mean(x$test_r2),
     se_test_r2 = if (nrow(x) > 1L) sd(x$test_r2) / sqrt(nrow(x)) else NA_real_,
+    mean_test_mae = mean(x$test_mae),
     mean_fit_seconds = mean(fit_times)
   )
 }))
@@ -370,6 +407,20 @@ dir.create(output_dir, recursive = TRUE, showWarnings = FALSE)
 write.csv(per_fold, output_files[["per_fold"]], row.names = FALSE)
 write.csv(summary, output_files[["summary"]], row.names = FALSE)
 write.csv(objective, output_files[["objective"]], row.names = FALSE)
+write.csv(do.call(rbind, checkpoint_rows), output_files[["checkpoints"]],
+          row.names = FALSE)
+saveRDS(list(
+  control = control, checkpoints = checkpoints, seed = 2549L, RNGkind = RNGkind(),
+  rank = 3L, input_dims = 6L, output_dims = c(25L, 21L, 8L),
+  initializer = "CPCA", initializer_normalization = "sqrt_n",
+  initializer_split = c(1L, 2L), design_variance = 1,
+  metric_reference = "training-fold response-channel mean for train and test R2",
+  timing_scope = "solver including history; excludes shared CPCA, preprocessing and metrics",
+  package_version = as.character(utils::packageVersion("SegreCP")),
+  installed_package = find.package("SegreCP"),
+  runner_sha256 = digest::digest(script_path, algo = "sha256", file = TRUE),
+  folds = fold_settings
+), output_files[["settings"]])
 write.csv(input_record, output_files[["inputs"]], row.names = FALSE)
 writeLines(capture.output(sessionInfo()), output_files[["session"]])
 message("Saved authors-method results under ", normalizePath(output_dir),

@@ -44,7 +44,7 @@ missing_worker <- tryCatch(
 check(is.character(missing_worker) && length(missing_worker) == 1L &&
         grepl("requires the complete manuscript repository", missing_worker,
               fixed = TRUE) &&
-        grepl("rgn_benchmark/run_tensor_on_tensor_baseline_grid.R",
+        grepl("experiments/current_package/regression_adapters.R",
               missing_worker, fixed = TRUE),
       "A detached checkout must report the missing manuscript worker clearly")
 setwd(old_wd)

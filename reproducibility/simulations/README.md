@@ -1,58 +1,61 @@
-# Numerical experiments
+# Current numerical experiments
 
-These scripts generate new data under the rebuttal-stage simulation designs
-and fit RGD and RGN with the installed `SegreCP` package. Install the package,
-run the commands from the repository root, and choose new output directories
-outside the repository.
-
-## CP decomposition
+These entry points generate fresh data for the fixed `signal4_formal20`
+study and call the accelerated public API in installed `SegreCP >= 0.1.5`.
+They run RGD and RGN without ridge regularization. No manuscript workspace
+or stored experimental outcomes are needed for these authors-method runs.
 
 ```sh
 Rscript reproducibility/simulations/run_decomposition.R \
-  --output-dir=/path/to/new-smoke-results
-Rscript reproducibility/simulations/run_decomposition.R \
-  --full --output-dir=/path/to/new-full-results
+  --output-dir=/existing/parent/new-decomposition-smoke
+Rscript reproducibility/simulations/run_tensor_regression.R \
+  --output-dir=/existing/parent/new-regression-smoke
 ```
 
-The default runs one replication for three sweeps. `--full` runs 20
-replications for 10 sweeps. The design uses a `60 x 30 x 30` tensor, rank 3,
-condition number 30, coherence 0.5, Gaussian noise standard deviation 1,
-signal multiplier 3, and seed `20260829 + replication`. Each generated tensor
-has CPCA and HOSVD starts, shared between RGD and RGN. RGD uses step size 0.5.
-The HOSVD start is ordered by signed core weights for the first sweep.
+The default uses the first dimension setting, replication 1, both noise levels,
+and three decomposition or two regression iterations. `--p-index`,
+`--replication`, and `--iterations` select another smoke subset. Add `--full`
+without these selectors for all dimensions, 20 independent paired replications,
+and 10 iterations. Choose a new output directory outside the package checkout;
+its parent directory must exist.
 
-`trajectory.csv` records the objective and relative Frobenius error at each
-sweep. `terminal_accuracy.csv` gives the final values; `settings.csv`,
-`validation_checks.csv`, and `session_info.txt` describe the run. When bundled
-reference trajectories are available, `reference_comparison.csv` summarizes
-their numerical differences from the fresh fits. The objective is the
-optimized quantity; reconstruction error against the known tensor may rise
-near the noise floor.
+| Task | Dimensions | Full RGD/RGN fits |
+|---|---|---:|
+| Decomposition | `P x 30 x 30 x 30`, `P = 30, 60, 90, 120` | 320 |
+| Tensor-on-tensor regression | input `P x 10 x 10`, output `10 x 10`, `P = 40, 60, 100` | 240 |
 
-## Tensor-on-tensor regression
+Both tasks use rank 3, condition number 30, coherence 0.5, signal multiplier 4,
+and noise levels 0 and 1. Regression uses 1,000 training and 1,000 test samples.
+The Mersenne-Twister seed is
+`741103000 + task_offset + 1000 * p_index + replication`, with task offsets
+0 for decomposition and 100000 for regression. The two noise levels share
+factor directions and the same realized noise. The coefficient and noise
+scaling follow the fixed study; regression uses a normalized design and
+`normalize_regression = "none"`.
 
-```sh
-Rscript reproducibility/simulations/run_tensor_regression.R \
-  --output-dir=/absolute/path/to/new-smoke-results
-Rscript reproducibility/simulations/run_tensor_regression.R \
-  --full --output-dir=/absolute/path/to/new-full-results
-```
+Within every dataset, RGD and RGN share the same realized CPCA start.
+CPCA groups modes `1,2` for decomposition and output modes `4,5` for regression.
+Both use decreasing-weight component order. Decomposition RGD uses step 0.5,
+and RGN uses step 1. Regression RGD uses its exact-quadratic step rule; RGN
+uses the unregularized tangent least-squares update.
 
-The default runs one design cell, one replication, and two sweeps; `--help`
-lists selectors for a different quick run. `--full` covers 12 cells, 20 paired
-replications per cell, and 10 sweeps. The coefficient has dimensions
-`10 x 10 x 10 x 10 x 10` and rank 3, with 1,000 training and 1,000 test
-observations. Coherence is `0, 0.2, 0.5, 0.75` and noise standard deviation is
-`0, 0.5, 1`. The same CPCA start is used for RGD and RGN in each task. The
-script generates the coefficient in response-first order and converts it to
-the package's predictor-first format for estimation.
+`trajectories.csv` records relative coefficient recovery error and the observed
+least-squares objective at every iteration, including initialization.
+Regression also records train, test, and clean-test RMSE.
+`fits.csv` records actual iterations, ridge, and the public solver entry point.
+`settings.csv`, `settings.rds`, and `sessionInfo.txt` record the configuration.
+`inputs.csv` contains input and initialization hashes; `cases/` saves compact
+truth and initialization objects, and `fits/` saves every component state,
+accepted step, control, and solver objective. Recovery error is reported as
+computed, without smoothing or imposing monotonicity. These runs do not
+measure solver speed.
 
-`authors_regression_metrics.csv` records coefficient and prediction errors
-and locally measured runtimes. `authors_regression_objective.csv` gives the
-convergence paths. `run_settings.csv` and `sessionInfo.txt` record the design
-and software environment. Results are written to the selected output directory.
+The separate `run_comparisons.R` entry point runs comparison methods through
+the current manuscript adapters; it requires the complete manuscript workspace.
+The authors-only entry points above remain standalone. Bundled `inst/extdata`
+rebuttal results are historical records, separate from this fresh study.
 
-To check both entry points with small runs after installing the package:
+To check both authors-method entry points:
 
 ```sh
 Rscript reproducibility/simulations/tests/smoke.R

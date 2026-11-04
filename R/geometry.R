@@ -252,7 +252,8 @@
 }
 
 .tensor_tangent_statistics <- function(X, target, U, dims, output_order,
-                                       include_gram = FALSE) {
+                                       include_gram = FALSE,
+                                       full_gram = TRUE) {
   factors <- .tensor_tangent_factors(X, U, dims, output_order)
   rhs <- .tensor_tangent_rhs(target, factors$B_out, factors$A_in)
   if (!include_gram) return(list(rhs = rhs))
@@ -260,17 +261,20 @@
   df_out <- ncol(factors$B_out)
   df_in <- ncol(factors$A_in)
   df <- df_out + df_in - 1L
-  gram <- matrix(0, df, df)
-  gram[1L, 1L] <- gram_in[1L, 1L]
-  if (df_out > 1L) {
-    oi <- 2L:df_out
-    gram[oi, oi] <- diag(gram_in[1L, 1L], length(oi))
-  }
-  if (df_in > 1L) {
-    ii <- (df_out + 1L):df
-    gram[1L, ii] <- gram_in[1L, -1L]
-    gram[ii, 1L] <- gram_in[-1L, 1L]
-    gram[ii, ii] <- gram_in[-1L, -1L, drop = FALSE]
+  gram <- NULL
+  if (full_gram) {
+    gram <- matrix(0, df, df)
+    gram[1L, 1L] <- gram_in[1L, 1L]
+    if (df_out > 1L) {
+      oi <- 2L:df_out
+      gram[oi, oi] <- diag(gram_in[1L, 1L], length(oi))
+    }
+    if (df_in > 1L) {
+      ii <- (df_out + 1L):df
+      gram[1L, ii] <- gram_in[1L, -1L]
+      gram[ii, 1L] <- gram_in[-1L, 1L]
+      gram[ii, ii] <- gram_in[-1L, -1L, drop = FALSE]
+    }
   }
   list(rhs = rhs, gram = gram, gram_in = gram_in,
        df_out = df_out, df_in = df_in)

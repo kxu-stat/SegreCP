@@ -112,6 +112,54 @@ check(fit_help$status == 0L &&
         grepl("--smoke", fit_help$output, fixed = TRUE),
       "The authors-method CLI help must describe its purpose and fit options")
 
+# Evaluate the runner's actual control and initialization expressions on a
+# small numeric fixture; no official data or solver fit is needed.
+fit_expressions <- parse(file = fit_driver)
+assignment_value <- function(name) {
+  values <- list()
+  visit <- function(x) {
+    if (missing(x)) return(invisible(NULL))
+    if (is.call(x) && identical(x[[1L]], as.name("<-")) &&
+        identical(x[[2L]], as.name(name))) {
+      values[[length(values) + 1L]] <<- x[[3L]]
+    }
+    if (is.call(x) || is.expression(x)) lapply(as.list(x), visit)
+    invisible(NULL)
+  }
+  visit(fit_expressions)
+  check(length(values) == 1L, paste("Expected one runner assignment for", name))
+  values[[1L]]
+}
+check(requireNamespace("SegreCP", quietly = TRUE),
+      "Install SegreCP before checking the fitting protocol")
+protocol_env <- new.env(parent = globalenv())
+protocol_env$iterations <- 30L
+protocol_env$smoke <- FALSE
+control <- eval(assignment_value("control"), protocol_env)
+check(identical(control$ridge, 0) &&
+        identical(control$normalize_regression, "none") &&
+        identical(control$component_order, "decreasing_weight") &&
+        identical(control$step_rule, "backtracking") && control$tolerance == 0,
+      "The fresh trade fit must retain zero ridge and the original solver scale")
+check(identical(eval(assignment_value("checkpoints"), protocol_env),
+                c(3L, 5L, 10L, 30L)),
+      "The full trade run must retain iterations 3, 5, 10 and 30")
+set.seed(193L)
+protocol_env$Xtr <- matrix(rnorm(12L * 6L), 12L, 6L)
+protocol_env$Ytr_matrix <- matrix(rnorm(12L * 25L * 21L * 8L), 12L)
+protocol_env$moment <- eval(assignment_value("moment"), protocol_env)
+expected_moment <- array(crossprod(protocol_env$Xtr, protocol_env$Ytr_matrix) /
+                          nrow(protocol_env$Xtr), c(6L, 25L, 21L, 8L))
+check(isTRUE(all.equal(protocol_env$moment, expected_moment, tolerance = 1e-12)),
+      "CPCA must use the training mean cross-moment, not the unnormalized sum")
+initial <- eval(assignment_value("initial"), protocol_env)
+expected_initial <- SegreCP::cp_initialize(expected_moment, rank = 3L,
+  method = "cpca", split = c(1L, 2L), seed = 2549L)
+check(isTRUE(all.equal(SegreCP::reconstruct_cp(initial$comps),
+                       SegreCP::reconstruct_cp(expected_initial$comps),
+                       tolerance = 1e-10)),
+      "The shared trade initializer must preserve the normalized CPCA configuration")
+
 # These requests must fail before they create a package-local directory.
 guard_dir <- tempfile(pattern = ".segrecp-write-guard-", tmpdir = package_dir)
 check(!file.exists(guard_dir), "The proposed write-guard path already exists")
@@ -130,4 +178,5 @@ check(fit$status != 0L && grepl("outside the SegreCP package", fit$output) &&
 
 cat(sprintf("PASS: parsed %d R scripts; validated 82 source and 4 derived ",
             length(r_files)))
-cat("manifest rows; checked both CLI help modes and package write guards.\n")
+cat("manifest rows; checked CLI help, zero-ridge controls, normalized CPCA, ",
+    "checkpoints and package write guards.\n")

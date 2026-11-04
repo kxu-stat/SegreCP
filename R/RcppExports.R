@@ -17,6 +17,14 @@ update_rank1_cache_inplace_cpp <- function(residual, component_cache, lambda, Ul
     invisible(.Call(`_SegreCP_update_rank1_cache_inplace_cpp`, residual, component_cache, lambda, Ulist))
 }
 
+initialize_decomposition_state_cpp <- function(observed, components) {
+    .Call(`_SegreCP_initialize_decomposition_state_cpp`, observed, components)
+}
+
+rgd_sweep_gs_batch_cpp <- function(residual, cache_list, components, order_i, alpha, previous_objective = NULL) {
+    .Call(`_SegreCP_rgd_sweep_gs_batch_cpp`, residual, cache_list, components, order_i, alpha, previous_objective)
+}
+
 modewise_design_fibres_cpp <- function(X, Ulist) {
     .Call(`_SegreCP_modewise_design_fibres_cpp`, X, Ulist)
 }

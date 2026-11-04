@@ -1,20 +1,24 @@
 # Reproduce the experiments
 
-Install `SegreCP` first, then run these scripts from the repository root.
-They use the package's RGD and RGN methods with CPCA or HOSVD initialization.
+Install `SegreCP >= 0.1.5` first, then run these scripts from the repository
+root. Fresh authors-method fits use the accelerated public RGD/RGN API
+with zero ridge regularization.
 
 ## Synthetic experiments
 
 [`simulations/README.md`](simulations/README.md) gives commands, seeds, and
-settings for fresh noisy CP decomposition and tensor-on-tensor regression runs.
+settings for the current `signal4_formal20` decomposition and tensor-on-tensor
+regression study: 20 paired replications, both noise levels, and shared CPCA
+starts. The default commands run small subsets before a full run.
 The [initialization](../vignettes/rebuttal-initialization-convergence.Rmd) and
 [tensor-regression](../vignettes/rebuttal-regression-reproducibility.Rmd)
-vignettes recompute the rebuttal-stage tables and plots from per-replication
-results.
+vignettes recompute historical rebuttal-stage tables and plots from their
+bundled per-replication records; these archives are separate from fresh runs.
 
 The comparison script is [`comparison_methods.R`](comparison_methods.R). Its
-CP-ALS decomposition route runs here; the regression comparison workers use
-the larger manuscript experiment workspace.
+CP-ALS decomposition route runs here. The separate
+[`simulations/run_comparisons.R`](simulations/run_comparisons.R) entry point
+uses the current zero-ridge regression adapters from the manuscript workspace.
 
 ## Real-data analysis
 
