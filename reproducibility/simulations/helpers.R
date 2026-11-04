@@ -151,10 +151,16 @@ simulation_metrics <- function(components, data, task) {
   if (task == "decomposition") {
     result$objective <- .5 * sum((coefficient - data$observed)^2)
   } else {
-    B <- matrix(as.numeric(coefficient), nrow = ncol(data$X_train))
-    train <- data$X_train %*% B - matrix(data$Y_train, nrow(data$X_train))
-    test <- data$X_test %*% B - matrix(data$Y_test, nrow(data$X_test))
-    clean <- data$X_test %*% B - matrix(data$Y_test_clean, nrow(data$X_test))
+    input_modes <- seq_along(data$input_dims)
+    product <- function(U) if (length(U)) Reduce(kronecker, rev(U)) else 1
+    input <- do.call(cbind, lapply(components, function(z) product(z$U[input_modes])))
+    output <- do.call(cbind, lapply(components, function(z) product(z$U[-input_modes])))
+    weights <- vapply(components, `[[`, numeric(1L), "lambda")
+    predict <- function(X) tcrossprod(sweep(X %*% input, 2L, weights, "*"), output)
+    train <- predict(data$X_train) - matrix(data$Y_train, nrow(data$X_train))
+    test_prediction <- predict(data$X_test)
+    test <- test_prediction - matrix(data$Y_test, nrow(data$X_test))
+    clean <- test_prediction - matrix(data$Y_test_clean, nrow(data$X_test))
     result$objective <- .5 * sum(train^2)
     result$train_RMSE <- sqrt(mean(train^2))
     result$test_RMSE <- sqrt(mean(test^2))
