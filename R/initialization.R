@@ -37,9 +37,8 @@
          call. = FALSE)
   }
   # The criterion of the CPCA algorithm in the paper, |prod(p[S]) -
-  # sqrt(prod(p))|, on the original scale. (On the log scale, a different
-  # subset can be chosen when the dimensions differ.) Ties go to the first
-  # subset in the order of utils::combn().
+  # sqrt(prod(p))|. Ties go to the first subset in the order of
+  # utils::combn().
   target <- sqrt(prod(as.numeric(dims)))
   candidates <- unlist(lapply(seq_len(d - 1L), function(k) {
     z <- utils::combn(seq_len(d), k, simplify = FALSE)

@@ -1,45 +1,37 @@
 \begin{table}[!htbp]
 \centering
-\caption{Wall-clock time in milliseconds to come within 1\% of the error level, the lowest root mean square error at the last iteration among CP-ALS, RGD and RGN (iteration 20, or 100 at $\rho=0.75$ in decomposition), in the settings with noise. --: not reached. Bold: fastest in each setting. RRR and the regression methods in other tensor formats reach the level in no setting, and Orth-ALS and ICO only at $\rho=0$.}
-\label{tab:time_to_level}
+\caption{CP decomposition: wall-clock time in milliseconds to come within 1\% of the error level of the setting, the lowest root mean square error at the last iteration among CP-ALS, RGD and RGN, in the settings with noise. The time is the number of iterations needed times the median time per iteration of the method in the setting. --: not reached. Bold: fastest in each setting. The last iteration is 20, or 100 at $\rho=0.75$. At $s=30$ and $\rho=0$, every method starts at the level.}
+\label{tab:time_decomposition}
 {\small
 \begin{tabular}{llcccc}
 \toprule
 $s$ & Method & $\rho=0$ & $\rho=0.25$ & $\rho=0.5$ & $\rho=0.75$ \\
 \midrule
-\multicolumn{6}{l}{\emph{Tensor-on-tensor regression}} \\
-30 & RGD & 94 & 101 & 81 & \textbf{211} \\
- & RGN & \textbf{32} & \textbf{34} & \textbf{44} & 234 \\
- & CP-ALS & 69 & 62 & 73 & 275 \\
-\addlinespace
-10 & RGD & 78 & 79 & 79 & \textbf{143} \\
- & RGN & \textbf{38} & \textbf{34} & \textbf{49} & 180 \\
- & CP-ALS & 72 & 71 & 63 & 213 \\
-\addlinespace
-3 & RGD & 62 & 57 & 134 & -- \\
- & RGN & \textbf{35} & 49 & 148 & \textbf{295} \\
- & CP-ALS & 45 & \textbf{42} & \textbf{63} & -- \\
-\midrule
-\multicolumn{6}{l}{\emph{CP decomposition}} \\
 30 & RGD & \textbf{0} & 103 & 241 & 1305 \\
  & RGN & \textbf{0} & \textbf{28} & 68 & 383 \\
  & CP-ALS & \textbf{0} & 45 & 101 & 543 \\
+ & Orth-ALS & \textbf{0} & -- & -- & -- \\
+ & ICO & \textbf{0} & -- & -- & -- \\
  & NLS-GN & \textbf{0} & 30 & \textbf{55} & \textbf{130} \\
  & GN-CG & \textbf{0} & 42 & 86 & 174 \\
  & CP-ALS+ELS & \textbf{0} & 1067 & 2022 & 6253 \\
  & Hybrid AMDM & \textbf{0} & -- & -- & 808 \\
-\addlinespace
+\midrule
 10 & RGD & \textbf{14} & 66 & 187 & 909 \\
  & RGN & \textbf{14} & \textbf{28} & \textbf{56} & 286 \\
  & CP-ALS & 22 & 41 & 86 & 355 \\
+ & Orth-ALS & 27 & -- & -- & -- \\
+ & ICO & 29 & -- & -- & -- \\
  & NLS-GN & 32 & 29 & 67 & \textbf{108} \\
  & GN-CG & 41 & 38 & 83 & 139 \\
- & CP-ALS+ELS & 538 & 1017 & 1595 & 5274 \\
+ & CP-ALS+ELS & 538 & 1017 & 1594 & 5274 \\
  & Hybrid AMDM & 26 & -- & -- & 744 \\
-\addlinespace
+\midrule
 3 & RGD & 198 & 164 & -- & 342 \\
  & RGN & \textbf{107} & 109 & -- & 68 \\
  & CP-ALS & 114 & \textbf{84} & \textbf{370} & 167 \\
+ & Orth-ALS & 141 & -- & -- & -- \\
+ & ICO & 113 & -- & -- & -- \\
  & NLS-GN & 323 & 229 & -- & 103 \\
  & GN-CG & 274 & 232 & -- & \textbf{66} \\
  & CP-ALS+ELS & 2248 & 2131 & 5794 & 2162 \\

@@ -88,10 +88,6 @@ segre_control <- function(
   if (length(ridge) != 1L || !is.finite(ridge) || ridge < 0) {
     stop("`ridge` must be one nonnegative finite number.", call. = FALSE)
   }
-  if (profile == "manuscript" && ridge != 0) {
-    warning("A positive ridge changes manuscript RGN into regularized RGN.",
-            call. = FALSE)
-  }
   if (length(armijo) != 1L || !is.finite(armijo) || armijo <= 0 || armijo >= 1) {
     stop("`armijo` must lie strictly between zero and one.", call. = FALSE)
   }

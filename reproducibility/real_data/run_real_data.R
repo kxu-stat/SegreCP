@@ -1,15 +1,11 @@
 # Trade-data analysis: Table 1 and the fitting-path table of Appendix D.
 #
-# Run from the repository root after preparing the data (README.md):
-#   Rscript reproducibility/real_data/run_real_data.R <data_dir>/analysis_official <out_dir> [rank]
+# Run from the repository root:
+#   Rscript reproducibility/real_data/run_real_data.R <prepared_dir> <out_dir> [rank]
+# <prepared_dir> holds response_Y.csv, design_X.csv and folds.csv, written by
+# 3_build_data.R or taken from the supplementary material of the paper.
 # rank defaults to 3.
 #
-# Data (written by run.R --prepare):
-#   Y: processed/tensors_real.RData, 80 exporters x 25 partners x 21 HS sections
-#      x 8 channels;
-#   X: processed/preprocessing_sensitivity_inputs/v3_scope_sqrt_raw_center_X_raw.csv
-#      (6 features per exporter);
-#   folds: outputs/tables/official_rank3_fold_assignments.csv (5 folds of 16).
 # In each fold, X is standardized with the training means and standard
 # deviations and Y is centered with the training mean of each channel.
 #
@@ -43,32 +39,29 @@ CHECKPOINTS <- c(3, 5, 10, 30, 300)
 INPUT_DIMS <- 6
 OUTPUT_DIMS <- c(25, 21, 8)
 CP_METHODS <- c("CP-ALS", "RGD", "RGN")
-OTHER_METHODS <- c("Tucker-RGD", "TT-IHT")
-if (requireNamespace("MultiwayRegression", quietly = TRUE)) {
-  OTHER_METHODS <- c("RRR", OTHER_METHODS)
-}
+OTHER_METHODS <- c("RRR", "Tucker-RGD", "TT-IHT")
 
 # ------------------------------------------------------------------- data
-env <- new.env()
-load(file.path(data_dir, "processed", "tensors_real.RData"), envir = env)
-Y_full <- env$Y                                   # 80 x 25 x 21 x 8
-exporters <- env$exporters$exp_iso3
-x_table <- read.csv(file.path(data_dir, "processed",
-  "preprocessing_sensitivity_inputs", "v3_scope_sqrt_raw_center_X_raw.csv"))
-x_table <- x_table[match(exporters, x_table$exp_iso3), ]
-stopifnot(identical(x_table$exp_iso3, exporters))
-X_raw <- as.matrix(x_table[, -1])                 # 80 x 6
-folds <- read.csv(file.path(data_dir, "outputs", "tables",
-                            "official_rank3_fold_assignments.csv"))
+# Y: 80 exporters x 25 partners x 21 HS sections x 8 channels.
+y <- read.csv(file.path(data_dir, "response_Y.csv"))
+exporters <- unique(y$exporter)
+cell <- cbind(match(y$exporter, exporters), match(y$partner, unique(y$partner)),
+              match(y$section, unique(y$section)))
+channels <- names(y)[-(1:3)]
+Y_full <- array(NA_real_, c(length(exporters), OUTPUT_DIMS))
+for (k in seq_along(channels)) Y_full[cbind(cell, k)] <- y[[channels[k]]]
+# X: 6 features per exporter.
+x_table <- read.csv(file.path(data_dir, "design_X.csv"))
+X_raw <- as.matrix(x_table[match(exporters, x_table$exporter), -1])   # 80 x 6
+folds <- read.csv(file.path(data_dir, "folds.csv"))
 fold_id <- folds$fold[match(exporters, folds$exporter)]
-stopifnot(!anyNA(fold_id), all(table(fold_id) == 16))
 
 # Training/test split and preprocessing of one fold.
 prepare_fold <- function(fold) {
   test <- which(fold_id == fold)
   train <- setdiff(seq_along(fold_id), test)
   x_mu <- colMeans(X_raw[train, ])
-  x_sd <- pmax(apply(X_raw[train, ], 2, sd), 1e-12)
+  x_sd <- apply(X_raw[train, ], 2, sd)
   y_mu <- apply(Y_full[train, , , ], 4, mean)     # one mean per channel
   center <- function(rows) {
     Y <- sweep(Y_full[rows, , , , drop = FALSE], 4, y_mu, "-")
@@ -95,40 +88,23 @@ scores <- function(coefficient, dat) {
 # standardized), with the balanced split of the coefficient modes
 # {feature, partner} (6 x 25 = 150, closest to sqrt(25200)).
 cpca_start <- function(dat) {
-  make_shared_cpca_initialization(dat$X_train, dat$Y_train_array, INPUT_DIMS,
-    OUTPUT_DIMS, RANK, split = 1:2, design_variance = nrow(dat$X_train),
-    normalize_regression = "none")
+  regression_start(dat$X_train, dat$Y_train_array, INPUT_DIMS, OUTPUT_DIMS,
+                   RANK, split = 1:2, design_variance = nrow(dat$X_train))
 }
 
-method_options <- function(diagnostics) {
-  options <- regression_trajectory_options()  # ridge 0; RGD fixed step (below)
-  options$protocol <- "real_trade"  # TT-IHT step 1/lambda_max(X'X); Tucker-RGD
-                                    # starts from OLS + T-HOSVD (as before)
-  options$tucker_ranks <- rep(RANK, 4)
-  options$tt_ranks <- rep(RANK, 3)
-  options$diagnostics <- diagnostics
-  options$collect_coefficients <- diagnostics
-  options
-}
-
-fit_method <- function(method, dat, start, fold, diagnostics,
-                       iterations = ITERATIONS, blocks = RANK) {
+# TT-IHT uses the step 1 / lambda_max(X'X), and Tucker-RGD starts from the
+# T-HOSVD of the least-squares estimate (real_data = TRUE).
+fit_method <- function(method, dat, start, fold, iterations = ITERATIONS,
+                       blocks = RANK) {
   if (method == "Tucker-RGN") {
     return(tucker_rgn_tot(dat$X_train, dat$Y_train, INPUT_DIMS, OUTPUT_DIMS,
                           rep(RANK, 4), iterations))
   }
-  options <- method_options(diagnostics)
-  options$hopls_blocks <- blocks
-  if (method == "RGD") {
-    options$step_size <- 1 / max(eigen(crossprod(dat$X_train))$values)
-  }
-  prepared <- prepare_regression_kernel(method, dat$X_train, dat$Y_train_array,
-    INPUT_DIMS, OUTPUT_DIMS, rank = RANK,
-    shared_init = if (method %in% CP_METHODS) start else NULL,
-    iterations = iterations, seed = 2549 + fold, ridge = 0, options = options)
-  fit <- fit_regression_kernel(prepared)
-  if (diagnostics) fit <- finalize_regression_kernel(fit, prepared)
-  fit
+  fit_regression_method(method, dat$X_train, dat$Y_train_array, INPUT_DIMS,
+    OUTPUT_DIMS, rank = RANK, start = start, iterations = iterations,
+    seed = 2549 + fold,
+    step_size = 1 / max(eigen(crossprod(dat$X_train))$values),
+    blocks = blocks, real_data = TRUE)
 }
 
 coefficient_path <- function(fit) {
@@ -142,16 +118,15 @@ for (f in 1:5) {
   dat <- prepare_fold(f)
   start <- cpca_start(dat)
   for (method in c(CP_METHODS, OTHER_METHODS, "Tucker-RGN")) {
-    path <- coefficient_path(fit_method(method, dat, start, f, TRUE,
+    path <- coefficient_path(fit_method(method, dat, start, f,
                                         iterations = LONG_RUN))
-    stopifnot(length(path) == LONG_RUN + 1)
     for (k in CHECKPOINTS) {
       accuracy[[length(accuracy) + 1]] <- data.frame(fold = f,
         method = method, checkpoint = k, t(scores(path[[k + 1]], dat)))
     }
   }
   for (blocks in 1:RANK) {
-    fit <- fit_method("HOPLS", dat, start, f, TRUE, blocks = blocks)
+    fit <- fit_method("HOPLS", dat, start, f, blocks = blocks)
     accuracy[[length(accuracy) + 1]] <- data.frame(fold = f,
       method = "HOPLS", checkpoint = blocks, t(scores(fit$coefficient, dat)))
   }

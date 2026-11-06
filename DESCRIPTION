@@ -1,7 +1,7 @@
 Package: SegreCP
 Type: Package
 Title: Riemannian CP Tensor Estimation on the Segre Manifold
-Version: 0.1.5
+Version: 0.1.0
 Authors@R: c(
     person("Ke", "Xu", email = "kxu6@nd.edu", role = c("aut", "cre")),
     person("Yuefeng", "Han", email = "yuefeng.han@nd.edu", role = "aut")
@@ -27,7 +27,6 @@ Imports:
 LinkingTo: Rcpp
 Suggests:
     knitr,
-    litedown,
     testthat (>= 3.0.0)
 VignetteBuilder: knitr
 Config/testthat/edition: 3

@@ -1,85 +1,20 @@
-# CP-decomposition comparators of Appendix C: Orth-ALS, ICO, NLS-GN, GN-CG,
-# CP-ALS with enhanced line search and hybrid AMDM. Each is an R
-# implementation of the cited algorithm (references below); all start from the
-# CPCA components supplied by the caller. Sourcing this file defines functions
-# only.
-
-.dc_references <- c(
-  "Orth-ALS" = "Sharan and Valiant (2017), orthogonalized ALS",
-  "ICO" = "Han and Zhang (2023), iterative concurrent orthogonalization",
-  "NLS-GN" = "Sorber, Van Barel and De Lathauwer (2013), NLS Gauss-Newton",
-  "GN-CG" = "Singh et al. (2021), implicit Gauss-Newton with CG",
-  "CP-ALS+ELS" = "Rajih, Comon and Harshman (2008), enhanced line search",
-  "Hybrid AMDM" = "Singh and Solomonik (2023), hybrid AMDM"
-)
-
-.dc_whole_number <- function(x, name, positive = TRUE) {
-  lower <- if (positive) 1 else 0
-  if (length(x) != 1L || !is.numeric(x) || !is.finite(x) ||
-      x != floor(x) || x < lower) {
-    stop("`", name, "` must be one ",
-         if (positive) "positive" else "nonnegative", " integer.",
-         call. = FALSE)
-  }
-  as.integer(x)
-}
-
-.dc_scalar <- function(x, name, lower = -Inf, strict_lower = FALSE) {
-  invalid_lower <- if (strict_lower) x <= lower else x < lower
-  if (length(x) != 1L || !is.numeric(x) || !is.finite(x) || invalid_lower) {
-    stop("`", name, "` has an invalid value.", call. = FALSE)
-  }
-  as.numeric(x)
-}
-
-.dc_option <- function(options, name, default) {
-  value <- options[[name]]
-  if (is.null(value)) default else value
-}
-
-.dc_observed_array <- function(observed) {
-  if (inherits(observed, "Tensor")) {
-    out <- array(as.numeric(observed@data), dim = dim(observed))
-  } else {
-    out <- observed
-  }
-  if (!is.array(out) || length(dim(out)) < 2L || any(dim(out) < 1L) ||
-      !is.numeric(out) || any(!is.finite(out))) {
-    stop("`observed` must be a finite numeric tensor of order at least two.",
-         call. = FALSE)
-  }
-  out
-}
-
-.dc_validate_components <- function(components, dims, name = "initialization") {
-  if (!is.list(components) || !length(components)) {
-    stop("`", name, "` must be a nonempty component list.", call. = FALSE)
-  }
-  valid <- vapply(components, function(component) {
-    is.list(component) && length(component$lambda) == 1L &&
-      is.numeric(component$lambda) && is.finite(component$lambda) &&
-      is.list(component$U) && length(component$U) == length(dims) &&
-      all(vapply(seq_along(dims), function(mode) {
-        u <- component$U[[mode]]
-        is.numeric(u) && length(u) == dims[[mode]] && all(is.finite(u))
-      }, logical(1L)))
-  }, logical(1L))
-  if (!all(valid)) {
-    stop("`", name, "` is not compatible with the observed dimensions.",
-         call. = FALSE)
-  }
-  invisible(components)
-}
+# CP-decomposition comparators of Appendix C, each an R implementation of the
+# cited algorithm, started from the CPCA components supplied by the caller:
+#   Orth-ALS     Sharan and Valiant (2017), orthogonalized ALS
+#   ICO          Han and Zhang (2023), iterative concurrent orthogonalization
+#   NLS-GN       Sorber, Van Barel and De Lathauwer (2013), Gauss-Newton with
+#                a trust region
+#   GN-CG        Singh et al. (2021), Gauss-Newton with conjugate gradients
+#   CP-ALS+ELS   Rajih, Comon and Harshman (2008), ALS with enhanced line search
+#   Hybrid AMDM  Singh and Solomonik (2023), hybrid alternating mahalanobis
+#                distance minimization
+# One iteration is one sweep over the modes for the alternating methods and
+# one Gauss-Newton step for NLS-GN and GN-CG.
 
 .dc_problem <- function(observed) {
-  if (!requireNamespace("rTensor", quietly = TRUE)) {
-    stop("The decomposition comparators require the 'rTensor' package.",
-         call. = FALSE)
-  }
-  observed <- .dc_observed_array(observed)
   tensor <- rTensor::as.tensor(observed)
   dims <- dim(observed)
-  structure(list(
+  list(
     observed = observed,
     tensor = tensor,
     dims = dims,
@@ -88,20 +23,7 @@
     unfoldings = lapply(seq_along(dims), function(mode) {
       rTensor::k_unfold(tensor, m = mode)@data
     })
-  ), class = c("decomposition_comparator_problem", "list"))
-}
-
-.dc_validate_problem <- function(problem) {
-  required <- c("observed", "tensor", "dims", "order", "y_norm_sq",
-                "unfoldings")
-  if (!inherits(problem, "decomposition_comparator_problem") ||
-      !all(required %in% names(problem)) ||
-      length(problem$unfoldings) != problem$order ||
-      !identical(as.integer(dim(problem$observed)),
-                 as.integer(problem$dims))) {
-    stop("The prepared decomposition problem is invalid.", call. = FALSE)
-  }
-  problem
+  )
 }
 
 .dc_raw_factors <- function(components) {
@@ -138,7 +60,8 @@
           u <- A[, component]
           norm <- sqrt(sum(u * u))
           if (!is.finite(norm) || norm <= floor) {
-            u <- numeric(nrow(A)); u[[1L]] <- 1
+            u <- numeric(nrow(A))
+            u[[1L]] <- 1
             u
           } else u / norm
         })
@@ -168,7 +91,8 @@
           u <- A[, component]
           norm <- sqrt(sum(u * u))
           if (!is.finite(norm) || norm <= floor) {
-            u <- numeric(nrow(A)); u[[1L]] <- 1
+            u <- numeric(nrow(A))
+            u[[1L]] <- 1
             u
           } else u / norm
         })
@@ -202,11 +126,7 @@
 .dc_relative_error <- function(estimate, truth) {
   estimate_dense <- .dc_reconstruct_components(estimate)
   truth_dense <- .dc_reconstruct_components(truth)
-  truth_norm_sq <- sum(truth_dense * truth_dense)
-  if (!is.finite(truth_norm_sq) || truth_norm_sq <= 0) {
-    stop("`truth` has zero or nonfinite Frobenius norm.", call. = FALSE)
-  }
-  sqrt(sum((estimate_dense - truth_dense)^2) / truth_norm_sq)
+  sqrt(sum((estimate_dense - truth_dense)^2) / sum(truth_dense * truth_dense))
 }
 
 .dc_mttkrp <- function(problem, factors, mode) {
@@ -227,20 +147,12 @@
   0.5 * sum(residual * residual)
 }
 
-.dc_solver_state <- function() {
-  state <- new.env(parent = emptyenv())
-  state$pseudoinverse_fallbacks <- 0L
-  state
-}
-
-.dc_right_solve <- function(B, G, diagonal_shift = 0, state = NULL) {
+# B %*% solve(G + diagonal_shift * I), with a pseudoinverse when G is singular.
+.dc_right_solve <- function(B, G, diagonal_shift = 0) {
   rank <- ncol(G)
   shifted <- (G + t(G)) / 2 + diag(diagonal_shift, rank)
   answer <- tryCatch(t(solve(shifted, t(B))), error = function(e) NULL)
   if (!is.null(answer) && all(is.finite(answer))) return(answer)
-  if (!is.null(state)) {
-    state$pseudoinverse_fallbacks <- state$pseudoinverse_fallbacks + 1L
-  }
   eigen_decomposition <- eigen(shifted, symmetric = TRUE)
   tolerance <- max(dim(shifted)) * .Machine$double.eps *
     max(abs(eigen_decomposition$values), 1)
@@ -276,10 +188,6 @@
     Q <- factors[[mode]]
     for (component in seq_len(rank)) {
       norm <- sqrt(sum(Q[, component] * Q[, component]))
-      if (!is.finite(norm) || norm <= .Machine$double.eps) {
-        stop("Orth-ALS encountered a zero Gram-Schmidt column.",
-             call. = FALSE)
-      }
       Q[, component] <- Q[, component] / norm
       if (component < rank) {
         for (later in seq.int(component + 1L, rank)) {
@@ -294,28 +202,22 @@
 }
 
 .dc_fit_orth_als <- function(problem, initialization, iterations, truth,
-                             diagnostics, options, state) {
+                             diagnostics) {
   raw <- .dc_raw_factors(initialization)
   factors <- raw$factors
   weights <- raw$weights
   objective_rows <- error_rows <- list()
   recorded <- .dc_record(0L, initialization, problem, truth, diagnostics,
                          objective_rows, error_rows)
-  objective_rows <- recorded$objective; error_rows <- recorded$error
+  objective_rows <- recorded$objective
+  error_rows <- recorded$error
   for (iteration in seq_len(iterations)) {
     factors <- .dc_orthogonalize(factors)
     grams <- lapply(factors, crossprod)
     for (mode in seq_along(factors)) {
       normal <- Reduce("*", grams[-mode])
-      updated <- .dc_right_solve(
-        .dc_mttkrp(problem, factors, mode), normal,
-        diagonal_shift = 0, state = state
-      )
+      updated <- .dc_right_solve(.dc_mttkrp(problem, factors, mode), normal)
       norms <- sqrt(colSums(updated * updated))
-      if (any(!is.finite(norms)) || any(norms <= .Machine$double.eps)) {
-        stop("Orth-ALS encountered a zero mode-update column.",
-             call. = FALSE)
-      }
       factors[[mode]] <- sweep(updated, 2L, norms, "/")
     }
     contractions <- colSums(
@@ -327,13 +229,12 @@
       iteration, components, problem, truth, diagnostics,
       objective_rows, error_rows
     )
-    objective_rows <- recorded$objective; error_rows <- recorded$error
+    objective_rows <- recorded$objective
+  error_rows <- recorded$error
   }
   list(
     components = .dc_components_from_weighted_factors(factors, weights),
-    objective_rows = objective_rows, error_rows = error_rows,
-    accepted = iterations,
-    extras = list(orthogonalization = "classical_Gram_Schmidt_before_each_sweep")
+    objective_rows = objective_rows, error_rows = error_rows
   )
 }
 
@@ -345,7 +246,7 @@
 }
 
 .dc_fit_ico <- function(problem, initialization, iterations, truth,
-                        diagnostics, options, state) {
+                        diagnostics) {
   raw <- .dc_raw_factors(initialization)
   factors <- raw$factors
   weights <- raw$weights
@@ -353,8 +254,8 @@
   objective_rows <- error_rows <- list()
   recorded <- .dc_record(0L, initialization, problem, truth, diagnostics,
                          objective_rows, error_rows)
-  objective_rows <- recorded$objective; error_rows <- recorded$error
-  zero_contractions <- 0L
+  objective_rows <- recorded$objective
+  error_rows <- recorded$error
   for (iteration in seq_len(iterations)) {
     for (mode in seq_along(factors)) {
       inverses <- lapply(factors, .dc_right_inverse)
@@ -362,7 +263,6 @@
       updated <- .dc_mttkrp(problem, dual_factors, mode)
       norms <- sqrt(colSums(updated * updated))
       zero <- !is.finite(norms) | norms <= .Machine$double.eps
-      zero_contractions <- zero_contractions + sum(zero)
       if (any(zero)) updated[, zero] <- 0
       if (any(!zero)) {
         updated[, !zero] <- sweep(updated[, !zero, drop = FALSE], 2L,
@@ -380,16 +280,12 @@
       iteration, components, problem, truth, diagnostics,
       objective_rows, error_rows
     )
-    objective_rows <- recorded$objective; error_rows <- recorded$error
+    objective_rows <- recorded$objective
+  error_rows <- recorded$error
   }
   list(
     components = .dc_components_from_weighted_factors(factors, weights),
-    objective_rows = objective_rows, error_rows = error_rows,
-    accepted = iterations,
-    extras = list(
-      pseudoinverse = "SVD_Moore_Penrose_MATLAB_pinv_tolerance",
-      zero_contractions = zero_contractions
-    )
+    objective_rows = objective_rows, error_rows = error_rows
   )
 }
 
@@ -487,11 +383,11 @@
   out
 }
 
-.dc_block_precondition <- function(factors, residual, damping, state) {
+.dc_block_precondition <- function(factors, residual, damping) {
   grams <- lapply(factors, crossprod)
   lapply(seq_along(factors), function(mode) {
     normal <- Reduce("*", grams[-mode])
-    .dc_right_solve(residual[[mode]], normal, damping, state)
+    .dc_right_solve(residual[[mode]], normal, damping)
   })
 }
 
@@ -606,30 +502,18 @@
 }
 
 .dc_fit_nls_gn <- function(problem, initialization, iterations, truth,
-                           diagnostics, options, state) {
+                           diagnostics) {
   factors <- .dc_balanced_factors(initialization)
   dims <- problem$dims
   rank <- length(initialization)
-  cg_maxit <- .dc_whole_number(.dc_option(options, "cg_maxit", 20L),
-                               "options$cg_maxit")
-  cg_tolerance <- .dc_scalar(.dc_option(options, "cg_tolerance", 1e-3),
-                             "options$cg_tolerance", 0, strict_lower = TRUE)
-  damping_factor <- .dc_scalar(
-    .dc_option(options, "nls_damping_factor", 1e-10),
-    "options$nls_damping_factor", 0
-  )
+  cg_maxit <- 20L                 # conjugate-gradient iterations per step
+  cg_tolerance <- 1e-3
+  damping_factor <- 1e-10
   norm <- sqrt(sum(.dc_pack(factors)^2))
-  radius <- .dc_option(options, "trust_radius", NULL)
-  if (is.null(radius)) radius <- max(0.25 * norm, 1)
-  radius <- .dc_scalar(radius, "options$trust_radius", 0, strict_lower = TRUE)
-  maximum_radius <- .dc_option(options, "trust_max", NULL)
-  if (is.null(maximum_radius)) maximum_radius <- max(4 * norm, radius)
-  maximum_radius <- .dc_scalar(maximum_radius, "options$trust_max", radius)
+  radius <- max(0.25 * norm, 1)   # trust region
+  maximum_radius <- max(4 * norm, radius)
   objective <- .dc_objective(problem, factors)
   history <- .dc_generic_history(initialization, problem, truth, diagnostics)
-  inner_iterations <- integer(iterations)
-  accepted <- logical(iterations)
-  damping_path <- numeric(iterations)
   for (iteration in seq_len(iterations)) {
     gradient <- .dc_gradient(problem, factors)
     gradient_vector <- .dc_pack(gradient$gradient)
@@ -638,22 +522,18 @@
       max(vapply(gradient$leave_one, function(normal) max(diag(normal)),
                  numeric(1L)))
     )
-    damping_path[[iteration]] <- damping
     apply_operator <- function(vector) {
       direction <- .dc_unpack(vector, dims, rank)
       .dc_pack(.dc_jtj_apply(factors, direction, damping))
     }
     apply_preconditioner <- function(vector) {
       residual <- .dc_unpack(vector, dims, rank)
-      .dc_pack(.dc_block_precondition(
-        factors, residual, damping = damping, state = state
-      ))
+      .dc_pack(.dc_block_precondition(factors, residual, damping = damping))
     }
     step <- .dc_steihaug(
       apply_operator, -gradient_vector, apply_preconditioner,
       radius = radius, maxit = cg_maxit, tolerance = cg_tolerance
     )
-    inner_iterations[[iteration]] <- step$iterations
     operator_step <- apply_operator(step$solution)
     predicted <- -sum(gradient_vector * step$solution) -
       0.5 * sum(step$solution * operator_step)
@@ -672,7 +552,6 @@
     if (is.finite(ratio) && ratio > 1e-4 && is.finite(trial_objective)) {
       factors <- .dc_balance_factors(trial_factors)
       objective <- .dc_objective(problem, factors)
-      accepted[[iteration]] <- TRUE
     }
     history <- .dc_append_generic_history(
       history, iteration, factors, problem, truth, diagnostics
@@ -680,45 +559,22 @@
   }
   list(
     components = .dc_components_from_factors(factors),
-    objective_rows = history$objective_rows, error_rows = history$error_rows,
-    accepted = sum(accepted),
-    extras = list(
-      accepted_path = accepted, inner_iterations = inner_iterations,
-      inner_converged_count = NA_integer_, trust_radius_final = radius,
-      trust_radius_max = maximum_radius, damping_path = damping_path,
-      damping_role = "intrinsic_damped_Gauss_Newton_normal_operator"
-    )
+    objective_rows = history$objective_rows, error_rows = history$error_rows
   )
 }
 
 .dc_fit_gn_cg <- function(problem, initialization, iterations, truth,
-                          diagnostics, options, state) {
+                          diagnostics) {
   factors <- .dc_balanced_factors(initialization)
   dims <- problem$dims
   rank <- length(initialization)
-  cg_maxit <- .dc_whole_number(.dc_option(options, "cg_maxit", 20L),
-                               "options$cg_maxit")
-  cg_tolerance <- .dc_scalar(.dc_option(options, "cg_tolerance", 1e-3),
-                             "options$cg_tolerance", 0, strict_lower = TRUE)
-  armijo <- .dc_scalar(.dc_option(options, "armijo", 1e-4),
-                       "options$armijo", 0)
-  max_backtracks <- .dc_whole_number(
-    .dc_option(options, "max_backtracks", 12L),
-    "options$max_backtracks", positive = FALSE
-  )
-  initial_damping <- .dc_option(options, "gn_damping", NULL)
-  if (!is.null(initial_damping)) {
-    initial_damping <- .dc_scalar(initial_damping, "options$gn_damping", 0,
-                                  strict_lower = TRUE)
-  }
+  cg_maxit <- 20L                 # conjugate-gradient iterations per step
+  cg_tolerance <- 1e-3
+  armijo <- 1e-4                  # backtracking line search
+  max_backtracks <- 12L
   objective <- .dc_objective(problem, factors)
   history <- .dc_generic_history(initialization, problem, truth, diagnostics)
-  inner_iterations <- integer(iterations)
-  inner_converged <- logical(iterations)
-  accepted <- logical(iterations)
-  step_lengths <- numeric(iterations)
-  damping_path <- numeric(iterations)
-  damping <- initial_damping
+  damping <- NULL                 # set in the first iteration, then adapted
   for (iteration in seq_len(iterations)) {
     gradient <- .dc_gradient(problem, factors)
     if (is.null(damping)) {
@@ -728,7 +584,6 @@
                    numeric(1L)))
       )
     }
-    damping_path[[iteration]] <- damping
     gradient_vector <- .dc_pack(gradient$gradient)
     apply_operator <- function(vector) {
       direction <- .dc_unpack(vector, dims, rank)
@@ -736,16 +591,12 @@
     }
     apply_preconditioner <- function(vector) {
       residual <- .dc_unpack(vector, dims, rank)
-      .dc_pack(.dc_block_precondition(
-        factors, residual, damping = damping, state = state
-      ))
+      .dc_pack(.dc_block_precondition(factors, residual, damping = damping))
     }
     step <- .dc_pcg(
       apply_operator, -gradient_vector, apply_preconditioner,
       maxit = cg_maxit, tolerance = cg_tolerance
     )
-    inner_iterations[[iteration]] <- step$iterations
-    inner_converged[[iteration]] <- step$converged
     direction <- step$solution
     directional_derivative <- sum(gradient_vector * direction)
     if (!is.finite(directional_derivative) || directional_derivative >= 0) {
@@ -769,11 +620,8 @@
       factors <- .dc_balance_factors(trial_factors)
       objective <- .dc_objective(problem, factors)
       damping <- max(damping / 3, 1e-12)
-      accepted[[iteration]] <- TRUE
-      step_lengths[[iteration]] <- step_length
     } else {
       damping <- min(damping * 10, 1e12)
-      step_lengths[[iteration]] <- 0
     }
     history <- .dc_append_generic_history(
       history, iteration, factors, problem, truth, diagnostics
@@ -781,25 +629,14 @@
   }
   list(
     components = .dc_components_from_factors(factors),
-    objective_rows = history$objective_rows, error_rows = history$error_rows,
-    accepted = sum(accepted),
-    extras = list(
-      accepted_path = accepted, inner_iterations = inner_iterations,
-      inner_converged = inner_converged, step_lengths = step_lengths,
-      damping_path = damping_path, damping_final = damping,
-      damping_role = "intrinsic_adaptive_Gauss_Newton_damping"
-    )
+    objective_rows = history$objective_rows, error_rows = history$error_rows
   )
 }
 
-.dc_als_sweep <- function(problem, factors, state, stabilizer = 0) {
+.dc_als_sweep <- function(problem, factors) {
   for (mode in seq_along(factors)) {
     normal <- Reduce("*", lapply(factors[-mode], crossprod))
-    scale <- max(1, max(abs(diag(normal))))
-    factors[[mode]] <- .dc_right_solve(
-      .dc_mttkrp(problem, factors, mode), normal,
-      diagonal_shift = stabilizer * scale, state = state
-    )
+    factors[[mode]] <- .dc_right_solve(.dc_mttkrp(problem, factors, mode), normal)
   }
   .dc_balance_factors(factors)
 }
@@ -821,9 +658,7 @@
   )@data)
 }
 
-# Exact coefficients of ||Y - CP(A + rho D)||_F^2. This implements the same
-# common-relaxation polynomial as the legacy Rcpp entry point without compiling
-# code while the adapter is sourced.
+# Coefficients of the polynomial rho -> ||Y - CP(A + rho D)||_F^2.
 .dc_els_polynomial <- function(problem, base, direction) {
   order <- problem$order
   rank <- ncol(base[[1L]])
@@ -899,45 +734,29 @@
 }
 
 .dc_fit_als_els <- function(problem, initialization, iterations, truth,
-                            diagnostics, options, state) {
-  stabilizer <- .dc_scalar(
-    .dc_option(options, "linear_solve_stabilizer", 0),
-    "options$linear_solve_stabilizer", 0
-  )
-  maximum_relaxation <- .dc_scalar(
-    .dc_option(options, "els_max_abs", 100), "options$els_max_abs", 0,
-    strict_lower = TRUE
-  )
+                            diagnostics) {
+  maximum_relaxation <- 100       # largest |rho| considered
   base <- .dc_balanced_factors(initialization)
   latest <- base
   history <- .dc_generic_history(initialization, problem, truth, diagnostics)
-  relaxations <- rep(NA_real_, iterations)
-  polynomial_degrees <- integer(iterations)
   for (iteration in seq_len(iterations)) {
     if (iteration == 1L) {
-      next_factors <- .dc_als_sweep(problem, latest, state, stabilizer)
-      relaxations[[iteration]] <- 1
+      next_factors <- .dc_als_sweep(problem, latest)
     } else {
       direction <- Map("-", latest, base)
       relaxation <- .dc_els_relaxation(
         problem, base, direction, maximum_relaxation
       )
-      polynomial_degrees[[iteration]] <- length(relaxation$polynomial) - 1L
       extrapolated <- Map(
         function(A, D) A + relaxation$relaxation * D, base, direction
       )
-      rho <- relaxation$relaxation
       if (!is.finite(.dc_objective(problem, extrapolated)) ||
           .dc_objective(problem, extrapolated) >
             .dc_objective(problem, latest)) {
-        rho <- 1
         extrapolated <- latest
       }
-      next_factors <- .dc_als_sweep(
-        problem, extrapolated, state, stabilizer
-      )
+      next_factors <- .dc_als_sweep(problem, extrapolated)
       base <- extrapolated
-      relaxations[[iteration]] <- rho
     }
     latest <- next_factors
     history <- .dc_append_generic_history(
@@ -946,20 +765,12 @@
   }
   list(
     components = .dc_components_from_factors(latest),
-    objective_rows = history$objective_rows, error_rows = history$error_rows,
-    accepted = iterations,
-    extras = list(
-      relaxations = relaxations,
-      polynomial_degrees = polynomial_degrees,
-      linear_solve_stabilizer = stabilizer,
-      stabilizer_role = if (stabilizer == 0) "none" else
-        "explicit_numerical_diagonal_shift_for_legacy_replay"
-    )
+    objective_rows = history$objective_rows, error_rows = history$error_rows
   )
 }
 
 .dc_amdm_mode_update <- function(problem, factors, mode, threshold,
-                                 sv_floor, stabilizer, state) {
+                                 sv_floor) {
   factors <- .dc_normalize_for_mode(factors, mode)
   other_modes <- setdiff(seq_along(factors), mode)
   transformed_factors <- vector("list", length(other_modes))
@@ -989,36 +800,22 @@
   )
   right_hand_side <- problem$unfoldings[[mode]] %*% khatri_rao
   normal <- Reduce("*", transformed_grams)
-  scale <- max(1, max(abs(diag(normal))))
-  factors[[mode]] <- .dc_right_solve(
-    right_hand_side, normal,
-    diagonal_shift = stabilizer * scale, state = state
-  )
+  factors[[mode]] <- .dc_right_solve(right_hand_side, normal)
   factors
 }
 
 .dc_fit_hybrid_amdm <- function(problem, initialization, iterations, truth,
-                                diagnostics, options, state) {
-  hybrid_every <- .dc_whole_number(
-    .dc_option(options, "hybrid_every", 10L), "options$hybrid_every"
-  )
-  sv_floor <- .dc_scalar(.dc_option(options, "sv_floor", 1e-10),
-                         "options$sv_floor", 0)
-  stabilizer <- .dc_scalar(
-    .dc_option(options, "linear_solve_stabilizer", 0),
-    "options$linear_solve_stabilizer", 0
-  )
+                                diagnostics) {
+  hybrid_every <- 10L             # one fewer inverted value every 10 iterations
+  sv_floor <- 1e-10
   rank <- length(initialization)
   factors <- .dc_balanced_factors(initialization)
   history <- .dc_generic_history(initialization, problem, truth, diagnostics)
-  thresholds <- integer(iterations)
   for (iteration in seq_len(iterations)) {
     threshold <- max(rank - floor((iteration - 1L) / hybrid_every), 0L)
-    thresholds[[iteration]] <- threshold
     for (mode in seq_along(factors)) {
-      factors <- .dc_amdm_mode_update(
-        problem, factors, mode, threshold, sv_floor, stabilizer, state
-      )
+      factors <- .dc_amdm_mode_update(problem, factors, mode, threshold,
+                                      sv_floor)
     }
     factors <- .dc_balance_factors(factors)
     history <- .dc_append_generic_history(
@@ -1027,89 +824,32 @@
   }
   list(
     components = .dc_components_from_factors(factors),
-    objective_rows = history$objective_rows, error_rows = history$error_rows,
-    accepted = iterations,
-    extras = list(
-      thresholds = thresholds, hybrid_every = hybrid_every,
-      hybrid_transition_count = sum(diff(thresholds) != 0),
-      sv_floor = sv_floor,
-      sv_floor_role = "numerical_SVD_inverse_threshold",
-      linear_solve_stabilizer = stabilizer,
-      stabilizer_role = if (stabilizer == 0) "none" else
-        "explicit_numerical_diagonal_shift_for_legacy_replay"
-    )
+    objective_rows = history$objective_rows, error_rows = history$error_rows
   )
 }
 
-#' Fit a repository-only CP-decomposition comparator
-#'
-#' @param method One of Orth-ALS, ICO, NLS-GN, GN-CG, CP-ALS+ELS, or
-#'   Hybrid AMDM.
-#' @param observed Numeric observed tensor or `rTensor::Tensor`.
-#' @param initialization Realized common CP component initialization.
-#' @param iterations Number of complete outer updates.
-#' @param truth Optional CP truth used only for oracle diagnostics.
-#' @param diagnostics Whether to retain iteration-wise objective/error records.
-#' @param options Method controls. A statistical ridge is not permitted.
-#' @return Common comparator fit object with final components, trajectory,
-#'   update counts, stopping information, method diagnostics, and provenance.
-fit_decomposition_comparator <- function(
-    method,
-    observed,
-    initialization,
-    iterations,
-    truth = NULL,
-    diagnostics = TRUE,
-    options = list()) {
-  methods <- c("Orth-ALS", "ICO", "NLS-GN", "GN-CG",
-               "CP-ALS+ELS", "Hybrid AMDM")
-  method <- match.arg(method, methods)
-  iterations <- .dc_whole_number(iterations, "iterations")
-  if (length(diagnostics) != 1L || !is.logical(diagnostics) ||
-      is.na(diagnostics)) {
-    stop("`diagnostics` must be TRUE or FALSE.", call. = FALSE)
-  }
-  if (!is.list(options)) stop("`options` must be a list.", call. = FALSE)
-  for (ridge_name in c("ridge", "statistical_ridge")) {
-    if (!is.null(options[[ridge_name]]) &&
-        (!is.numeric(options[[ridge_name]]) ||
-         length(options[[ridge_name]]) != 1L ||
-         !is.finite(options[[ridge_name]]) || options[[ridge_name]] != 0)) {
-      stop("Statistical ridge regularization is fixed at zero for these ",
-           "decomposition comparisons.", call. = FALSE)
-    }
-  }
-  prepared_by_caller <- inherits(observed, "decomposition_comparator_problem")
-  problem <- if (prepared_by_caller) {
-    .dc_validate_problem(observed)
-  } else .dc_problem(observed)
-  .dc_validate_components(initialization, problem$dims)
-  if (length(initialization) > min(problem$dims)) {
-    stop("The comparator rank cannot exceed a tensor mode dimension.",
-         call. = FALSE)
-  }
-  if (!is.null(truth)) .dc_validate_components(truth, problem$dims, "truth")
-  state <- .dc_solver_state()
+# Fits `method` to the tensor `observed` from the CP components
+# `initialization` for `iterations` iterations. With diagnostics = TRUE the
+# result has `objective`, a data frame with the objective (half the squared
+# Frobenius norm of the residual) at the start and after each iteration and,
+# if the true components `truth` are given, the relative Frobenius error.
+fit_decomposition_comparator <- function(method, observed, initialization,
+                                         iterations, truth = NULL,
+                                         diagnostics = TRUE) {
+  problem <- .dc_problem(observed)
   fitted <- switch(
     method,
-    `Orth-ALS` = .dc_fit_orth_als(
-      problem, initialization, iterations, truth, diagnostics, options, state
-    ),
-    ICO = .dc_fit_ico(
-      problem, initialization, iterations, truth, diagnostics, options, state
-    ),
-    `NLS-GN` = .dc_fit_nls_gn(
-      problem, initialization, iterations, truth, diagnostics, options, state
-    ),
-    `GN-CG` = .dc_fit_gn_cg(
-      problem, initialization, iterations, truth, diagnostics, options, state
-    ),
-    `CP-ALS+ELS` = .dc_fit_als_els(
-      problem, initialization, iterations, truth, diagnostics, options, state
-    ),
-    `Hybrid AMDM` = .dc_fit_hybrid_amdm(
-      problem, initialization, iterations, truth, diagnostics, options, state
-    )
+    `Orth-ALS` = .dc_fit_orth_als(problem, initialization, iterations, truth,
+                                  diagnostics),
+    ICO = .dc_fit_ico(problem, initialization, iterations, truth, diagnostics),
+    `NLS-GN` = .dc_fit_nls_gn(problem, initialization, iterations, truth,
+                              diagnostics),
+    `GN-CG` = .dc_fit_gn_cg(problem, initialization, iterations, truth,
+                            diagnostics),
+    `CP-ALS+ELS` = .dc_fit_als_els(problem, initialization, iterations, truth,
+                                   diagnostics),
+    `Hybrid AMDM` = .dc_fit_hybrid_amdm(problem, initialization, iterations,
+                                        truth, diagnostics)
   )
   objective <- if (length(fitted$objective_rows)) {
     do.call(rbind, fitted$objective_rows)
@@ -1120,49 +860,5 @@ fit_decomposition_comparator <- function(
       match(objective$iteration, errors$iteration)
     ]
   }
-  if (diagnostics &&
-      (!identical(as.integer(objective$iteration), 0:iterations) ||
-       any(!is.finite(objective$objective)))) {
-    stop("The comparator did not produce a complete finite objective path.",
-         call. = FALSE)
-  }
-  accepted <- as.integer(fitted$accepted)
-  list(
-    method = method,
-    components = fitted$components,
-    objective = objective,
-    actual_iterations = iterations,
-    accepted_iterations = accepted,
-    stop_reason = if (accepted == iterations) "iteration_budget" else
-      "iteration_budget_with_rejected_outer_updates",
-    diagnostics = fitted$extras,
-    metadata = list(
-      engine = "decomposition_comparators.R",
-      reference = .dc_references[[method]],
-      initialization = "caller_supplied_common_components",
-      problem_prepared_by_caller = prepared_by_caller,
-      iteration_definition = paste(
-        "one full mode sweep for alternating methods or one outer",
-        "trust-region/Gauss-Newton update"
-      ),
-      diagnostic_objective = paste(
-        "0.5 * sum((direct_dense_reconstruction - observed)^2); evaluated",
-        "only when diagnostics=TRUE"
-      ),
-      diagnostic_relative_frobenius_error = paste(
-        "sqrt(sum((direct_dense_reconstruction - direct_dense_truth)^2) /",
-        "sum(direct_dense_truth^2)); evaluated only when diagnostics=TRUE"
-      ),
-      diagnostic_metric_provenance = paste(
-        "direct dense residual evaluation; avoids cancellation",
-        "in ||estimate||^2 + ||truth||^2 - 2<estimate,truth>"
-      ),
-      requested_iterations = iterations,
-      statistical_ridge = 0,
-      intrinsic_damping = method %in% c("NLS-GN", "GN-CG"),
-      pseudoinverse_fallbacks = state$pseudoinverse_fallbacks,
-      diagnostics_retained = diagnostics,
-      control = options
-    )
-  )
+  list(method = method, components = fitted$components, objective = objective)
 }

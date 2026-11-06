@@ -1,6 +1,6 @@
 # Data generation for the tensor-on-tensor regression simulations: CP
 # coefficient with coherent factors, Gaussian design with entry variance 1/n
-# and Gaussian noise. Sourcing this file defines functions only.
+# and Gaussian noise.
 
 .simulation_rng <- function(seed) {
   RNGkind("Mersenne-Twister", "Inversion", "Rejection")

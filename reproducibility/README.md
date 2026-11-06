@@ -13,21 +13,21 @@ trade-data analysis of Section 5 and Appendix D. RGD and RGN are run with the
 |---|---|
 | `run_all.sh` | runs every step below in order |
 | `code/simulations.R` | data generation for the regression simulations |
-| `code/regression_adapters.R` | regression methods: CP-ALS, RGD, RGN, RRR, Tucker-RGD, TT-IHT, HOPLS; shared CPCA start; simulation options |
+| `code/regression_adapters.R` | regression methods: CP-ALS, RGD, RGN, RRR, Tucker-RGD, TT-IHT, HOPLS, and the shared start of CP-ALS, RGD and RGN |
 | `code/tucker_rgn.R` | Tucker-RGN for tensor-on-tensor regression |
 | `code/decomposition_comparators.R` | decomposition methods: Orth-ALS, ICO, NLS-GN, GN-CG, CP-ALS+ELS, hybrid AMDM |
 | `simulations/run_simulations.R` | simulation studies (one case per coherence, noise level and replication) |
-| `simulations/plot_figures.R` | Figures 1–4 and Tables 3–7 from the simulation results |
-| `real_data/` | download and preprocessing of the trade data, `run_real_data.R` (fits) and `make_tables.R` (Tables 1 and 8); see `real_data/README.md` |
+| `simulations/plot_figures.R` | Figures 1–5 and Tables 3–9 from the simulation results |
+| `real_data/` | trade data: download and preparation (`1_download_sources.R`, `2_download_tariffs.R`, `3_build_data.R`), fits (`run_real_data.R`) and Tables 1 and 10 (`make_tables.R`); see `real_data/README.md` |
 | `output/` | results of the runs reported in the paper (see below) |
 
 ## Software and hardware
 
 R 4.3.3 with `SegreCP` (this repository), `rTensor` 1.5.0,
 `MultiwayRegression` 1.2, `Rcpp` 1.0.12, `ggplot2` 3.4.4 and `scales` 1.3.0;
-the real-data preparation also uses `data.table`, `digest`, `jsonlite` and
-`xml2`. All reported numbers were computed on one machine with an Intel Xeon
-2.1 GHz CPU and 8 GB of memory, one fit per core and one BLAS thread.
+the real-data preparation also uses `data.table`, `jsonlite` and `xml2`. All
+reported numbers were computed on one machine with an Intel Xeon 2.1 GHz CPU
+and 8 GB of memory, one fit per core and one BLAS thread.
 
 ```sh
 Rscript -e 'install.packages(c("rTensor", "MultiwayRegression", "ggplot2", "scales"))'
@@ -41,16 +41,17 @@ All commands are run from the repository root; all paths are relative to it.
 
 | Step | Command | Paper | Time on one core |
 |---|---|---|---|
-| 1 | `run_simulations.R regression <out> 1:20` | Figures 1, 2; Tables 3, 6 | 2 h |
-| 2 | `run_simulations.R decomposition <out> 1:20` | Figures 3, 4; Tables 4, 6 | 2 h |
-| 3 | `run_simulations.R decomposition_long <out> 1:20` | Figures 3, 4 (ρ = 0.75) | 2.5 h |
-| 4 | `run_simulations.R initialization <out> 1:20` | Table 7 | 1.5 h |
-| 5 | `run_simulations.R timing_regression <out> 1:5` | Tables 5, 6 | 0.5 h |
-| 6 | `run_simulations.R timing_decomposition <out> 1:5` | Tables 5, 6 | 0.5 h |
-| 7 | `plot_figures.R <out> <figures> <tables> paper` | Figures 1–4; Tables 3–7 | 1 min |
-| 8 | `real_data/run.R --prepare --data-dir=<data>` | data for Tables 1, 8 | see `real_data/README.md` |
-| 9 | `real_data/run_real_data.R <data>/analysis_official <out>` | Tables 1, 8 | 10 min |
-| 10 | `real_data/make_tables.R <out>` | Tables 1, 8 | seconds |
+| 1 | `run_simulations.R regression <out> 1:20` | Figures 1, 2, 5; Tables 4, 6 | 2 h |
+| 2 | `run_simulations.R decomposition <out> 1:20` | Figures 3, 4, 5; Tables 5, 7 | 2 h |
+| 3 | `run_simulations.R decomposition_long <out> 1:20` | Figures 3–5, Table 5 (ρ = 0.75) | 2.5 h |
+| 4 | `run_simulations.R initialization <out> 1:20` | Tables 8, 9 | 1.5 h |
+| 5 | `run_simulations.R timing_regression <out> 1:5` | Tables 3, 4; Figure 5 | 0.5 h |
+| 6 | `run_simulations.R timing_decomposition <out> 1:5` | Tables 3, 5; Figure 5 | 0.5 h |
+| 7 | `plot_figures.R <out> <figures> <tables> paper` | Figures 1–5; Tables 3–9 | 1 min |
+| 8 | `real_data/1_download_sources.R <data>` and `2_download_tariffs.R <data>` | trade data sources | download |
+| 9 | `real_data/3_build_data.R <data>` | prepared trade data | 1 min |
+| 10 | `real_data/run_real_data.R <data>/prepared <out>` | Tables 1, 10 | 10 min |
+| 11 | `real_data/make_tables.R <out>` | Tables 1, 10 | seconds |
 
 Steps 1–4 can run cases in parallel (`SEGRECP_CORES=<cores>`). The timing
 studies (steps 5–6) must run on one core with one BLAS thread
@@ -71,14 +72,14 @@ Rscript reproducibility/simulations/plot_figures.R reproducibility/output/simula
 - `simulations/results_<study>.csv.gz`: one row per case, method and
   iteration (relative Frobenius error and objective; for the timing studies,
   seconds per fit), as written by `run_simulations.R` for the paper.
-- `figures/`, `tables/`: Figures 1–4 and Tables 3–7 as made by
+- `figures/`, `tables/`: Figures 1–5 and Tables 3–9 as made by
   `plot_figures.R` from these results, with the CSV summaries behind them.
 - `real_data/accuracy.csv`, `session.txt`: the trade-data run behind Tables 1
-  and 8. The trade data are not included (see `real_data/README.md`).
+  and 10. The prepared trade data are in the supplementary material of the
+  paper (see `real_data/README.md`).
 
-In our checks, rerunning single cases reproduced the stored errors exactly for
-all methods except CP-ALS+ELS, whose errors agreed to rounding (relative
-differences below 1e-7).
+Rerunning a case reproduces the stored errors up to floating-point rounding,
+which is largest for CP-ALS+ELS (relative differences below 1e-7).
 
 ## Simulation design
 
@@ -113,20 +114,28 @@ differences below 1e-7).
 - Curves: root mean square over the 20 replications of the relative Frobenius
   error ‖T̂ − T*‖_F / ‖T*‖_F, on a log10 scale; values below 1e-15 are drawn
   at 1e-15 and values above 1 (the random start of RRR) are not drawn.
-- Tables 3, 4 and 7: mean (standard deviation) over the replications of the
+- Tables 6 and 7: mean (standard deviation) over the replications of the
   relative error at iteration 20, times 10³, in the settings with noise; bold
-  is the lowest mean of a setting at the printed precision.
+  is the lowest mean of a setting at the printed precision. Tables 8 and 9:
+  mean of the relative error, times 10³, at iterations 0, 3, 5, 10 and 20
+  from each start; iteration 0 is the error of the start.
 - RRR stops before iteration 20 in 17 of the 320 regression paths, when its
   update no longer changes the fit. Such a path keeps its last estimate for the
   remaining iterations (`fill_paths` in `plot_figures.R`).
-- Table 5: median over all settings of the time of 20 iterations divided by
+- Table 3: median over all settings of the time of 20 iterations divided by
   20, with the error evaluation switched off (the estimates are unchanged), one
   fit at a time, one warm-up fit per method and the method order rotated. The
   shared CPCA start is timed separately.
-- Table 6: the error level of a setting is the lowest root mean square error
-  among CP-ALS, RGD and RGN at its last iteration (20, or 100 at ρ = 0.75 in
-  decomposition). The entry is the first iteration at which a method comes
-  within 1% of the level, times its median time per iteration in that setting.
+- Tables 4 and 5: the error level of a setting is the lowest root mean square
+  error among CP-ALS, RGD and RGN at its last iteration (20, or 100 at
+  ρ = 0.75 in decomposition). The entry is the first iteration at which a
+  method comes within 1% of the level, times its median time per iteration in
+  that setting.
+- Figure 5: performance profiles (Dolan and Moré, 2002) over the 12 settings
+  with noise. For each method and factor τ, the fraction of settings in which
+  its time to the error level (left) or its root mean square error at the last
+  iteration (right) is at most τ times the best value of the setting; a method
+  that does not reach the level of a setting is not within any factor there.
 
 ## Competing methods
 
@@ -145,8 +154,7 @@ differences below 1e-7).
   so that it equals CP-ALS from iteration 31.
 - RRR: `MultiwayRegression::rrr` (Lock, 2018) with its own random start. Its
   outer loop is given an iteration limit and records the coefficient after
-  every outer iteration (`.make_rrr_fixed` in `regression_adapters.R`); the
-  updates are those of the package.
+  every outer iteration (`.make_rrr_fixed` in `regression_adapters.R`).
 - Tucker-RGD: Riemannian gradient step with exact line search and backtracking,
   and T-HOSVD retraction (Luo and Zhang, 2024). Tucker-RGN: port of
   `RGN_tenreg` (HOSVD retraction) from the code of Luo and Zhang (2023),

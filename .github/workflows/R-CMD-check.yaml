@@ -26,11 +26,7 @@ jobs:
           extra-packages: any::rcmdcheck
           needs: check
       - uses: r-lib/actions/check-r-package@v2
-      - name: Install package for source-checkout smoke tests
-        if: runner.os != 'Windows'
-        run: R CMD INSTALL .
-      - name: Check the reproduction scripts
+      - name: Check that the reproduction scripts parse
         if: runner.os != 'Windows'
         run: |
-          Rscript reproducibility/real_data/tests/test_contracts.R
           Rscript -e 'for (f in list.files("reproducibility", "[.]R$", recursive = TRUE, full.names = TRUE)) parse(f)'

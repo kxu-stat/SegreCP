@@ -4,17 +4,17 @@
 #   Rscript reproducibility/simulations/run_simulations.R <study> <out_dir> [replications]
 # study:
 #   regression           tensor-on-tensor regression, 20 iterations
-#                        (Figures 1 and 2, Tables 3 and 6)
-#   decomposition        CP decomposition, 20 iterations (Figures 3 and 4,
-#                        Tables 4 and 6)
+#                        (Figures 1, 2 and 5, Tables 4 and 6)
+#   decomposition        CP decomposition, 20 iterations (Figures 3, 4 and 5,
+#                        Tables 5 and 7)
 #   decomposition_long   CP decomposition at coherence 0.75, 100 iterations, on
-#                        the same data sets (coherence-0.75 column of Figures 3
-#                        and 4)
+#                        the same data sets (coherence 0.75 in Figures 3-5 and
+#                        Table 5)
 #   initialization       CPCA, T-HOSVD and random starts in the settings with
-#                        noise (Table 7)
+#                        noise (Tables 8 and 9)
 #   timing_regression, timing_decomposition
-#                        running time per iteration (Tables 5 and 6); run with
-#                        replications 1:5 on one core (SEGRECP_CORES=1,
+#                        running time per iteration (Tables 3-5, Figure 5);
+#                        run with replications 1:5 on one core (SEGRECP_CORES=1,
 #                        OPENBLAS_NUM_THREADS=1) with nothing else running.
 # replications defaults to 1:20. Cases run in parallel on SEGRECP_CORES cores
 # (default 1).
@@ -185,14 +185,13 @@ regression_data <- function(coherence, snr, replication) {
 
 regression_case <- function(coherence, snr, replication) {
   data <- regression_data(coherence, snr, replication)
-  init <- make_shared_cpca_initialization(data$X_train, data$Y_train,
-    data$input_dims, data$output_dims, RANK, split = c(4, 5),
-    design_variance = 1, normalize_regression = "none")
-  options <- regression_trajectory_options()   # zero ridge; RGD fixed step 1
-  fit <- function(method, shared_init = init) {
+  start <- regression_start(data$X_train, data$Y_train, data$input_dims,
+                            data$output_dims, RANK, split = c(4, 5))
+  # RGD step 1 = sigma_X^(-2): the design entries have variance 1/n.
+  fit <- function(method) {
     fit_regression_method(method, data$X_train, data$Y_train, data$input_dims,
-      data$output_dims, rank = RANK, shared_init = shared_init,
-      iterations = ITERATIONS, seed = data$seed, ridge = 0, options = options)
+      data$output_dims, rank = RANK, start = start, iterations = ITERATIONS,
+      seed = data$seed)
   }
   paths <- list(); components <- list(); seconds <- numeric(0)
   for (method in c("CP-ALS", "RGD", "RGN", "RRR", "Tucker-RGD", "TT-IHT")) {
@@ -203,8 +202,8 @@ regression_case <- function(coherence, snr, replication) {
     if (is.null(history)) {
       history <- lapply(f$value$component_history, SegreCP::reconstruct_cp)
     }
-    objective <- f$value$objective$objective
-    if (length(objective) != length(history)) objective <- NA
+    objective <- f$value$objective
+    if (length(objective) != length(history)) objective <- NA     # RRR
     paths[[length(paths) + 1]] <- path_rows(method,
       sapply(history, relative_error, truth = data$truth), objective)
     components[[method]] <- if (method == "CP-ALS") f$value$components else
@@ -217,8 +216,7 @@ regression_case <- function(coherence, snr, replication) {
   paths[[length(paths) + 1]] <- path_rows("Tucker-RGN",
     sapply(tr$value$coefficient_history, relative_error, truth = data$truth))
   seconds["Tucker-RGN"] <- tr$seconds
-  hopls <- timed(tryCatch(fit("HOPLS", shared_init = NULL),
-                          error = function(e) NULL))
+  hopls <- timed(tryCatch(fit("HOPLS"), error = function(e) NULL))
   if (!is.null(hopls$value)) {
     paths[[length(paths) + 1]] <- data.frame(method = "HOPLS", iteration = NA,
       error = relative_error(hopls$value$coefficient, data$truth),
@@ -231,7 +229,7 @@ regression_case <- function(coherence, snr, replication) {
          dims = paste(c(data$input_dims, data$output_dims), collapse = "x"),
          rank = RANK, kappa = KAPPA, iterations = ITERATIONS),
        paths = do.call(rbind, paths),
-       truth_components = data$components, init_components = init$components,
+       truth_components = data$components, init_components = start,
        components = components, seconds = seconds)
 }
 
@@ -265,20 +263,15 @@ decomposition_timing_case <- function(coherence, snr, replication) {
 
 regression_timing_case <- function(coherence, snr, replication) {
   data <- regression_data(coherence, snr, replication)
-  cpca <- timed(make_shared_cpca_initialization(data$X_train, data$Y_train,
-    data$input_dims, data$output_dims, RANK, split = c(4, 5),
-    design_variance = 1, normalize_regression = "none"))
-  options <- regression_trajectory_options()
-  options$diagnostics <- FALSE
-  options$collect_coefficients <- FALSE
+  cpca <- timed(regression_start(data$X_train, data$Y_train, data$input_dims,
+                                 data$output_dims, RANK, split = c(4, 5)))
   seconds <- c("CPCA start" = cpca$seconds)
   for (method in c("CP-ALS", "RGD", "RGN", "RRR", "Tucker-RGD", "TT-IHT",
                    "HOPLS")) {
-    prepared <- prepare_regression_kernel(method, data$X_train, data$Y_train,
-      data$input_dims, data$output_dims, rank = RANK,
-      shared_init = if (method %in% c("CP-ALS", "RGD", "RGN")) cpca$value else NULL,
-      iterations = ITERATIONS, seed = data$seed, ridge = 0, options = options)
-    seconds[method] <- timed(fit_regression_kernel(prepared))$seconds
+    prepared <- prepare_regression_fit(method, data$X_train, data$Y_train,
+      data$input_dims, data$output_dims, rank = RANK, start = cpca$value,
+      iterations = ITERATIONS, seed = data$seed, record_path = FALSE)
+    seconds[method] <- timed(run_regression_fit(prepared))$seconds
   }
   seconds["Tucker-RGN"] <- timed(tucker_rgn_tot(data$X_train,
     matrix(data$Y_train, data$n), data$input_dims, data$output_dims,
@@ -322,16 +315,14 @@ initialization_case <- function(coherence, snr, replication) {
   data <- regression_data(coherence, snr, replication)
   truth <- data$truth
   for (start in STARTS) {
-    init <- make_shared_regression_initialization(data$X_train, data$Y_train,
-      data$input_dims, data$output_dims, RANK, split = c(4, 5),
-      design_variance = 1, normalize_regression = "none", seed = data$seed,
-      method = switch(start, "CPCA" = "CPCA", "T-HOSVD" = "HOSVD",
-                      "Random" = "Random"))
+    init <- regression_start(data$X_train, data$Y_train, data$input_dims,
+      data$output_dims, RANK, split = c(4, 5), seed = data$seed,
+      method = switch(start, "CPCA" = "cpca", "T-HOSVD" = "hosvd",
+                      "Random" = "random"))
     for (method in c("CP-ALS", "RGD", "RGN")) {
       fit <- fit_regression_method(method, data$X_train, data$Y_train,
-        data$input_dims, data$output_dims, rank = RANK, shared_init = init,
-        iterations = ITERATIONS, seed = data$seed, ridge = 0,
-        options = regression_trajectory_options())
+        data$input_dims, data$output_dims, rank = RANK, start = init,
+        iterations = ITERATIONS)
       history <- fit$coefficient_history
       if (is.null(history)) {
         history <- lapply(fit$component_history, SegreCP::reconstruct_cp)

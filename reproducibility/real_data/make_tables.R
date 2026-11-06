@@ -1,4 +1,4 @@
-# LaTeX rows of Table 1 and of the fitting-path table (Table 8), from the
+# LaTeX rows of Table 1 and of the fitting-path table (Table 10), from the
 # output of run_real_data.R.
 # Run from the repository root:
 #   Rscript reproducibility/real_data/make_tables.R <out_dir>
@@ -7,9 +7,8 @@
 #                    CP-format methods first, then the other formats, each group
 #                    under its own heading; the lowest mean test RMSE of each
 #                    group is in bold;
-#   paths_rows.tex   rows of Table 8 (iterations 3, 5, 10, 30, 300) and the
+#   paths_rows.tex   rows of Table 10 (iterations 3, 5, 10, 30, 300) and the
 #                    HOPLS row (1, 2, 3 latent blocks).
-# A method that was not run (RRR without MultiwayRegression) gets dashes.
 args <- commandArgs(trailingOnly = TRUE)
 out_dir <- args[[1]]
 accuracy <- read.csv(file.path(out_dir, "accuracy.csv"))
@@ -29,17 +28,11 @@ model <- c("CP-ALS" = "CP rank $=3$", "RRR" = "CP rank $=3$",
 terminal <- subset(accuracy, checkpoint == ifelse(method == "HOPLS", 3, 30))
 
 group_rows <- function(methods, heading) {
-  run <- methods[methods %in% terminal$method]
-  means <- sapply(run, function(m) mean(subset(terminal, method == m)$test_rmse))
+  means <- sapply(methods, function(m) mean(subset(terminal, method == m)$test_rmse))
   best <- names(means)[which.min(means)]
   lines <- sprintf("\\multicolumn{4}{l}{\\textit{%s}} \\\\", heading)
   for (m in methods) {
     x <- subset(terminal, method == m)
-    if (!nrow(x)) {
-      lines <- c(lines, sprintf("%-10s & %s & -- & -- \\\\ %% not run",
-                                m, model[[m]]))
-      next
-    }
     rmse <- pm(x$test_rmse)
     if (m == best) rmse <- paste0("\\mathbf{", rmse, "}")
     lines <- c(lines, sprintf("%-10s & %s & $%s$ & $%s$ \\\\", m,
@@ -53,10 +46,6 @@ writeLines(table1, file.path(out_dir, "table1_rows.tex"))
 
 path_row <- function(m, checkpoints) {
   x <- subset(accuracy, method == m)
-  if (!nrow(x)) {
-    return(paste0(sprintf("%-10s", m),
-                  strrep(" & --", length(checkpoints)), " \\\\ % not run"))
-  }
   v <- sapply(checkpoints, function(k) mean(subset(x, checkpoint == k)$test_rmse))
   paste0(sprintf("%-10s", m), paste(sprintf(" & $%.4f$", v), collapse = ""), " \\\\")
 }

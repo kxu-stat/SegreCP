@@ -17,8 +17,8 @@ attached base packages:
 [1] stats     graphics  grDevices utils     datasets  methods   base     
 
 other attached packages:
-[1] SegreCP_0.1.5
+[1] SegreCP_0.1.0
 
 loaded via a namespace (and not attached):
 [1] MASS_7.3-60.0.1        compiler_4.3.3         MultiwayRegression_1.2
-[4] Rcpp_1.0.12            digest_0.6.34          RhpcBLASctl_0.23-42   
+[4] Rcpp_1.0.12           

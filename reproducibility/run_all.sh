@@ -18,6 +18,8 @@ done
 Rscript reproducibility/simulations/plot_figures.R $SIM \
   reproducibility/output/figures reproducibility/output/tables paper
 
-Rscript reproducibility/real_data/run.R --prepare --data-dir="$DATA_DIR"
-Rscript reproducibility/real_data/run_real_data.R "$DATA_DIR/analysis_official" $REAL
+Rscript reproducibility/real_data/1_download_sources.R "$DATA_DIR"
+Rscript reproducibility/real_data/2_download_tariffs.R "$DATA_DIR"
+Rscript reproducibility/real_data/3_build_data.R "$DATA_DIR"
+Rscript reproducibility/real_data/run_real_data.R "$DATA_DIR/prepared" $REAL
 Rscript reproducibility/real_data/make_tables.R $REAL
