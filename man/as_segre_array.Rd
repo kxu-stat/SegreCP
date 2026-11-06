@@ -2,19 +2,25 @@
 % Please edit documentation in R/data-components.R
 \name{as_segre_array}
 \alias{as_segre_array}
-\title{Convert an array-like tensor to a base R array}
+\title{Convert a tensor to a base R array}
 \usage{
 as_segre_array(x)
 }
 \arguments{
-\item{x}{A numeric base R array, matrix, or \code{rTensor::Tensor}.}
+\item{x}{A numeric array or matrix, or an \code{rTensor::Tensor}.}
 }
 \value{
-A numeric base R array with the same dimensions and column-major
-entry order as \code{x}.
+A numeric (double) array with the dimensions and entries of \code{x}.
 }
 \description{
-\code{SegreCP} uses a base R array internally because its contiguous numeric
-storage can be passed directly to the compiled kernels. An
-\link[rTensor:Tensor-class]{rTensor::Tensor} is accepted and converted once at the boundary.
+\code{SegreCP} computes with base R arrays. The fitting functions call
+\code{as_segre_array()} on their input, so an \code{rTensor::Tensor} can be passed
+wherever an array is expected.
+}
+\examples{
+x <- rTensor::as.tensor(array(1:24, c(2, 3, 4)))
+dim(as_segre_array(x))
+}
+\seealso{
+\code{\link[=as_rtensor]{as_rtensor()}} for the conversion in the other direction.
 }

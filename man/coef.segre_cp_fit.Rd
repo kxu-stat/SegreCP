@@ -2,20 +2,26 @@
 % Please edit documentation in R/methods.R
 \name{coef.segre_cp_fit}
 \alias{coef.segre_cp_fit}
-\title{Extract a fitted CP coefficient tensor}
+\alias{as.array.segre_cp_fit}
+\title{Estimated tensor of a SegreCP fit}
 \usage{
 \method{coef}{segre_cp_fit}(object, format = c("array", "rTensor"), ...)
+
+\method{as.array}{segre_cp_fit}(x, ...)
 }
 \arguments{
-\item{object}{A \code{segre_cp_fit} object.}
+\item{object, x}{A fit from \code{\link[=segre_decompose]{segre_decompose()}} or \code{\link[=segre_regress]{segre_regress()}}.}
 
-\item{format}{A base R \code{"array"} or \code{"rTensor"} Tensor.}
+\item{format}{\code{"array"} or \code{"rTensor"}.}
 
 \item{...}{Unused.}
 }
 \value{
-The dense fitted tensor.
+A dense array, or an \code{rTensor::Tensor} for \code{format = "rTensor"}.
 }
 \description{
-Extract a fitted CP coefficient tensor
+\code{coef()} and \code{as.array()} return the estimated tensor as a dense array: the
+low-rank tensor for \code{\link[=segre_decompose]{segre_decompose()}} and the coefficient tensor, with
+dimensions \code{c(input_dims, output_dims)}, for \code{\link[=segre_regress]{segre_regress()}}. The CP
+components themselves are in \code{object$components}.
 }

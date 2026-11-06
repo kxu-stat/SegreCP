@@ -23,7 +23,7 @@ trade-data analysis of Section 5 and Appendix D. RGD and RGN are run with the
 
 ## Software and hardware
 
-R 4.3.3 with `SegreCP` 0.1.5 (this repository), `rTensor` 1.5.0,
+R 4.3.3 with `SegreCP` (this repository), `rTensor` 1.5.0,
 `MultiwayRegression` 1.2, `Rcpp` 1.0.12, `ggplot2` 3.4.4 and `scales` 1.3.0;
 the real-data preparation also uses `data.table`, `digest`, `jsonlite` and
 `xml2`. All reported numbers were computed on one machine with an Intel Xeon

@@ -1,4 +1,4 @@
-fast_regression_problem <- function(tensor_response = TRUE) {
+regression_problem <- function(tensor_response = TRUE) {
   set.seed(7103)
   n <- 64L
   input_dims <- c(3L, 4L)
@@ -22,7 +22,7 @@ fast_regression_problem <- function(tensor_response = TRUE) {
        initial = initial)
 }
 
-test_that("component starts skip the moment and preserve full trajectories", {
+test_that("a component start skips the moment and matches a function start", {
   original_moment <- SegreCP:::.coefficient_moment
   moment_calls <- 0L
   local_mocked_bindings(.coefficient_moment = function(...) {
@@ -34,7 +34,7 @@ test_that("component starts skip the moment and preserve full trajectories", {
     "control", "normalization", "fitted_values", "residual_values",
     "response_source", "design_source")
   for (tensor_response in c(FALSE, TRUE)) {
-    data <- fast_regression_problem(tensor_response)
+    data <- regression_problem(tensor_response)
     for (normalization in c("none", "sqrt_n")) {
       for (route in c("fixed", "exact_quadratic", "backtracking", "rgn")) {
         method <- if (route == "rgn") "rgn" else "rgd"
@@ -52,8 +52,7 @@ test_that("component starts skip the moment and preserve full trajectories", {
         expect_identical(moment_calls, before_calls)
         expect_identical(.Random.seed, before_seed)
         expect_identical(supplied$initialization$method, "custom_components")
-        # This route still forms the actual moment before returning the same
-        # components; cp_initialize performs the same validation pass.
+        # A function start forms the moment, then returns the same components.
         args$init <- function(x, rank) data$initial
         functional <- do.call(segre_regress, args)
         expect_identical(moment_calls, before_calls + 1L)
@@ -65,8 +64,8 @@ test_that("component starts skip the moment and preserve full trajectories", {
   }
 })
 
-test_that("custom initializer functions receive the original scaled moment", {
-  data <- fast_regression_problem(TRUE)
+test_that("an initializer function receives the scaled moment", {
+  data <- regression_problem(TRUE)
   for (normalization in c("none", "sqrt_n")) {
     scale <- if (normalization == "sqrt_n") 1 / sqrt(nrow(data$X)) else 1
     expected <- array(crossprod(data$X * scale, data$Y * scale) / 2,
@@ -89,22 +88,19 @@ test_that("custom initializer functions receive the original scaled moment", {
   }
 })
 
-test_that("component-start argument validation is unchanged", {
-  data <- fast_regression_problem(TRUE)
+test_that("a component start takes no init_args and may be wrapped", {
+  data <- regression_problem(TRUE)
   args <- list(X = data$X, Y = data$Y, rank = 2,
     input_dims = data$input_dims, output_dims = data$output_dims,
     method = "rgn", init = data$initial,
     control = segre_control(max_iter = 1, normalize_regression = "none"))
   expect_error(do.call(segre_regress, c(args, list(init_args = 1))),
     "`init_args` must be a list", fixed = TRUE)
-  for (name in c("x", "rank", "method", "split", "seed")) {
-    extra <- setNames(list(NULL), name)
-    expect_error(do.call(segre_regress, c(args, list(init_args = extra))),
-      "matched by multiple actual arguments", fixed = TRUE)
-  }
-  duplicate <- setNames(list(TRUE, FALSE), rep("project_random_weights", 2))
-  expect_error(do.call(segre_regress, c(args, list(init_args = duplicate))),
-    "matched by multiple actual arguments", fixed = TRUE)
+  expect_error(do.call(segre_regress, c(args, list(init_args = list(seed = 1)))),
+    "used only when `init` is a method name or a function", fixed = TRUE)
+  expect_error(segre_decompose(reconstruct_cp(data$initial), 2,
+    init = data$initial, init_args = list(seed = 1)),
+    "used only when `init` is a method name or a function", fixed = TRUE)
   plain <- do.call(segre_regress, args)
   args$init <- list(comps = data$initial)
   wrapped <- do.call(segre_regress, args)
@@ -114,9 +110,9 @@ test_that("component-start argument validation is unchanged", {
     "positive finite number", fixed = TRUE)
 })
 
-test_that("cached fitted values retain original-scale predictions", {
+test_that("fitted values are on the scale of the data", {
   for (tensor_response in c(FALSE, TRUE)) {
-    data <- fast_regression_problem(tensor_response)
+    data <- regression_problem(tensor_response)
     for (normalization in c("none", "sqrt_n")) {
       for (method in c("rgd", "rgn")) {
         fit <- segre_regress(data$X, data$Y, 2, data$input_dims,
@@ -135,8 +131,8 @@ test_that("cached fitted values retain original-scale predictions", {
   }
 })
 
-test_that("integer matrix inputs keep the previous double working scale", {
-  data <- fast_regression_problem(TRUE)
+test_that("integer inputs give the same fit as double inputs", {
+  data <- regression_problem(TRUE)
   X <- matrix(as.integer(round(20 * data$X)), nrow(data$X))
   Y <- matrix(as.integer(round(100 * data$Y)), nrow(data$X))
   ctl <- segre_control(max_iter = 2, normalize_regression = "none")
@@ -149,7 +145,7 @@ test_that("integer matrix inputs keep the previous double working scale", {
   expect_identical(a$fitted_values, b$fitted_values)
 })
 
-test_that("RGN uses the identical input Gram without the unused full matrix", {
+test_that("the block solve of the RGN normal equation equals the full solve", {
   set.seed(7104)
   for (dims in list(c(2L, 3L, 3L, 4L), c(1L, 2L, 1L, 3L),
                    c(2L, 3L, 1L, 1L))) {

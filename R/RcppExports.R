@@ -5,8 +5,8 @@ tangent_proj_cpp <- function(Tvec, Ulist) {
     .Call(`_SegreCP_tangent_proj_cpp`, Tvec, Ulist)
 }
 
-rgd_step_fused_cpp <- function(Rvec, Ulist, lambda_i, alpha, n_iter) {
-    .Call(`_SegreCP_rgd_step_fused_cpp`, Rvec, Ulist, lambda_i, alpha, n_iter)
+rgd_step_fused_cpp <- function(Rvec, Ulist, lambda_i, alpha) {
+    .Call(`_SegreCP_rgd_step_fused_cpp`, Rvec, Ulist, lambda_i, alpha)
 }
 
 make_rank1_vec_cpp <- function(lambda, Ulist) {

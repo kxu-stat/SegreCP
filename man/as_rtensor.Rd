@@ -7,7 +7,8 @@
 as_rtensor(x, ...)
 }
 \arguments{
-\item{x}{A base R tensor array or a fitted \code{segre_cp_fit} object.}
+\item{x}{A numeric array, or a fit from \code{\link[=segre_decompose]{segre_decompose()}} or
+\code{\link[=segre_regress]{segre_regress()}} (converted to its estimated tensor).}
 
 \item{...}{Unused.}
 }
@@ -16,4 +17,10 @@ An \code{rTensor::Tensor}.
 }
 \description{
 Convert to an rTensor Tensor
+}
+\examples{
+as_rtensor(array(1:8, c(2, 2, 2)))
+}
+\seealso{
+\code{\link[=as_segre_array]{as_segre_array()}} for the conversion in the other direction.
 }

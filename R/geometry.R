@@ -1,3 +1,15 @@
+# Tangent spaces and the retraction on the Segre manifold.
+#
+# At a rank-one tensor with unit factors u_1, ..., u_d, a tangent vector is
+#   a * (u_1 x ... x u_d) + sum_k (u_1 x ... x w_k x ... x u_d),
+# with w_k orthogonal to u_k. Its coordinates are a, followed for each mode k
+# by the p_k - 1 coordinates of w_k in an orthonormal basis Q_k of the
+# orthogonal complement of u_k. Q_k is the last p_k - 1 columns of a
+# Householder reflection whose first column is +-u_k, and is used through the
+# reflection vector without being formed. Tensors are vectorized in R's
+# column-major order (first mode fastest).
+
+# Returns v and coef with Q_k = I[, -1] - v %o% coef.
 .orth_complement_householder <- function(u) {
   u <- .normalize_vector(u, "factor")
   p <- length(u)
@@ -16,6 +28,7 @@
   diag(p)[, -1L, drop = FALSE] - outer(hh$v, hh$coef)
 }
 
+# F %*% Q_k without forming Q_k.
 .right_multiply_orth_complement <- function(F, u) {
   p <- length(u)
   if (p == 1L) return(matrix(nrow = nrow(F), ncol = 0L))
@@ -23,6 +36,7 @@
   F[, -1L, drop = FALSE] - outer(as.numeric(F %*% hh$v), hh$coef)
 }
 
+# Q_k %*% z: the vector w_k with coordinates z.
 .lift_from_orth_complement <- function(u, z) {
   p <- length(u)
   if (length(z) != p - 1L) {
@@ -33,23 +47,32 @@
   c(0, as.numeric(z)) - hh$v * sum(hh$coef * z)
 }
 
+# Orthonormal basis of the tangent space at u_1 x ... x u_d, one column per
+# tangent coordinate. Column (k, j) is u_1 x ... x Q_k[, j] x ... x u_d. The
+# entries are multiplied mode by mode in the same order as .rank1_vector(), so
+# the basis does not depend on how it is assembled.
 .build_tangent_basis <- function(U) {
   U <- lapply(U, .normalize_vector)
-  dims <- vapply(U, length, integer(1L))
-  basis <- matrix(.rank1_vector(1, U), ncol = 1L)
+  blocks <- list(matrix(.rank1_vector(1, U), ncol = 1L))
   for (k in seq_along(U)) {
     Q <- .orth_complement(U[[k]])
     if (!ncol(Q)) next
-    block <- vapply(seq_len(ncol(Q)), function(j) {
-      Uk <- U
-      Uk[[k]] <- Q[, j]
-      .rank1_vector(1, Uk)
-    }, numeric(prod(dims)))
-    basis <- cbind(basis, block)
+    block <- matrix(1, 1L, ncol(Q))
+    for (l in seq_along(U)) {
+      rows <- nrow(block)
+      factor <- if (l == k) {
+        Q[rep(seq_len(nrow(Q)), each = rows), , drop = FALSE]
+      } else rep(U[[l]], each = rows)
+      block <- block[rep(seq_len(rows), times = length(U[[l]])), ,
+                     drop = FALSE] * factor
+    }
+    blocks[[length(blocks) + 1L]] <- block
   }
-  basis
+  do.call(cbind, blocks)
 }
 
+# For a design X with rows vec(X_m), the n x df matrix whose row m holds the
+# inner products of X_m with the tangent basis at u_1 x ... x u_d.
 .compute_tangent_design <- function(X, U) {
   dims <- vapply(U, length, integer(1L))
   df <- 1L + sum(dims - 1L)
@@ -67,27 +90,11 @@
   A
 }
 
-.tangent_coords_to_vector <- function(U, coordinates) {
-  dims <- vapply(U, length, integer(1L))
-  expected <- 1L + sum(dims - 1L)
-  if (length(coordinates) != expected) {
-    stop(sprintf("Expected %d tangent coordinates; received %d.",
-                 expected, length(coordinates)), call. = FALSE)
-  }
-  out <- coordinates[[1L]] * .rank1_vector(1, U)
-  col <- 2L
-  for (k in seq_along(U)) {
-    block <- dims[[k]] - 1L
-    if (!block) next
-    idx <- col:(col + block - 1L)
-    Uk <- U
-    Uk[[k]] <- .lift_from_orth_complement(U[[k]], coordinates[idx])
-    out <- out + .rank1_vector(1, Uk)
-    col <- col + block
-  }
-  out
-}
-
+# Rank-(1, ..., 1) T-HOSVD of the tangent vector (a, w_1, ..., w_d) added to
+# the base point, returned as a component with unit factors. The mode-k
+# unfolding has its column space in span(u_k, w_k), so its leading singular
+# vector comes from a 2 x 2 eigenproblem. The C++ function
+# exact_tangent_hosvd() computes the same retraction for decomposition.
 .retract_tangent_vectors <- function(U, a, w) {
   b <- vapply(w, function(wk) {
     scale <- max(abs(wk))
@@ -127,6 +134,7 @@
   .canonicalize_component(list(lambda = as.numeric(lambda), U = Unew))
 }
 
+# Coordinates -> list(a, w) in the representation used by the retraction.
 .unpack_tangent_coordinates <- function(U, coordinates) {
   dims <- vapply(U, length, integer(1L))
   expected <- 1L + sum(dims - 1L)
@@ -154,6 +162,8 @@
   .retract_tangent_vectors(U, tangent$a, tangent$w)
 }
 
+# Retraction of base + alpha * direction for several alpha (backtracking),
+# with the coordinates unpacked once.
 .prepare_tangent_retraction <- function(U, base, direction) {
   b <- .unpack_tangent_coordinates(U, base)
   d <- .unpack_tangent_coordinates(U, direction)
@@ -171,6 +181,10 @@
   )
 }
 
+# Regression stores the output modes first, then the input modes. A rank-one
+# coefficient lambda * u_out x u_in maps X to the n x q matrix
+# lambda * (X %*% u_in) %o% u_out, where u_in and u_out are the vectorized
+# input and output factors.
 .split_internal_dims <- function(dims, output_order) {
   dims <- as.integer(dims)
   d <- length(dims)
@@ -221,10 +235,14 @@
        u_out = k$u_out, u_in = k$u_in)
 }
 
+# Tensor response: the tangent design separates into an orthonormal basis
+# B_out of the output tangent space and the input tangent design A_in. The
+# tangent coordinates are ordered as a, the output-mode coordinates, then the
+# input-mode coordinates.
 .tensor_tangent_factors <- function(X, U, dims, output_order) {
   split <- .split_internal_dims(dims, output_order)
   if (!split$output_order) {
-    stop("Tensor-response tangent factors require output modes.")
+    stop("Tensor-response tangent factors require output modes.", call. = FALSE)
   }
   B_out <- .build_tangent_basis(U[split$out_idx])
   A_in <- .compute_tangent_design(X, U[split$in_idx])
@@ -280,6 +298,9 @@
        df_out = df_out, df_in = df_in)
 }
 
+# RGN normal equation for a tensor response. The output-mode coordinates
+# decouple: their Gram block is ||X u_in||^2 times the identity. The
+# coordinate a and the input-mode coordinates have Gram matrix t(A_in) A_in.
 .solve_tensor_tangent <- function(statistics, ridge = 0) {
   df_out <- statistics$df_out
   df_in <- statistics$df_in
@@ -292,7 +313,7 @@
     solve(gram, statistics$rhs[joint]),
     error = function(e) stop(
       "The restricted tangent normal operator is singular; use a better ",
-      "initialization or set a positive `ridge` in the practical profile.",
+      "start or set a positive `ridge` in segre_control().",
       call. = FALSE
     )
   )

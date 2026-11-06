@@ -1,14 +1,15 @@
-# Public-API checks use small dense calculations, independently of the fast
-# decomposition sweep and the structured regression sufficient statistics.
-general_fast_components <- function(dims, rank) {
+# The public API against dense reference implementations: explicit tangent
+# projections, unfolding SVDs and least squares, without the compiled sweep or
+# the structured regression statistics.
+dense_components <- function(dims, rank) {
   lapply(seq_len(rank), function(i) {
     list(lambda = 2 + i / rank, U = lapply(dims, unit_vector))
   })
 }
 
-general_fast_problem <- function(dims, rank, seed) {
+dense_problem <- function(dims, rank, seed) {
   set.seed(seed)
-  truth <- general_fast_components(dims, rank)
+  truth <- dense_components(dims, rank)
   initial <- lapply(truth, function(component) {
     list(lambda = .96 * component$lambda, U = lapply(component$U, function(u) {
       v <- u + rnorm(length(u), sd = .01)
@@ -19,11 +20,11 @@ general_fast_problem <- function(dims, rank, seed) {
     array(rnorm(prod(dims), sd = .03), dims))
 }
 
-general_fast_dense_tensor <- function(components) {
+dense_dense_tensor <- function(components) {
   Reduce(`+`, lapply(components, function(z) rank1_array(z$lambda, z$U)))
 }
 
-general_fast_dense_projection <- function(residual, component) {
+dense_dense_projection <- function(residual, component) {
   U <- component$U
   d <- length(U)
   direction <- rank1_array(1, U)
@@ -41,9 +42,9 @@ general_fast_dense_projection <- function(residual, component) {
   projected
 }
 
-general_fast_dense_decomposition <- function(observed, initial, method, control) {
+dense_dense_decomposition <- function(observed, initial, method, control) {
   components <- initial
-  residual <- general_fast_dense_tensor(components) - observed
+  residual <- dense_dense_tensor(components) - observed
   history <- list(components)
   objective <- .5 * sum(residual^2)
   steps <- matrix(NA_real_, control$max_iter, length(components))
@@ -57,7 +58,7 @@ general_fast_dense_decomposition <- function(observed, initial, method, control)
     for (i in order_i) {
       old <- components[[i]]
       old_array <- rank1_array(old$lambda, old$U)
-      projected <- general_fast_dense_projection(residual, old)
+      projected <- dense_dense_projection(residual, old)
       step <- alpha
       if (method == "rgd" && control$step_rule == "backtracking") {
         loss_old <- .5 * sum(residual^2)
@@ -87,7 +88,7 @@ general_fast_dense_decomposition <- function(observed, initial, method, control)
   list(history = history, objective = objective, accepted_steps = steps)
 }
 
-general_fast_expect_decomposition <- function(fit, observed, reference = NULL) {
+dense_expect_decomposition <- function(fit, observed, reference = NULL) {
   expect_s3_class(fit, "segre_cp_decomposition")
   expect_identical(fit$control$ridge, 0)
   expect_identical(length(fit$component_history), fit$iterations + 1L)
@@ -95,11 +96,11 @@ general_fast_expect_decomposition <- function(fit, observed, reference = NULL) {
   expect_true(all(is.finite(fit$objective)))
   expect_true(all(is.finite(fit$accepted_steps)))
   for (iteration in 0:fit$iterations) {
-    current <- general_fast_dense_tensor(fit$component_history[[iteration + 1L]])
+    current <- dense_dense_tensor(fit$component_history[[iteration + 1L]])
     expect_equal(fit$objective[[iteration + 1L]], .5 * sum((current - observed)^2),
       tolerance = 2e-10)
     if (!is.null(reference)) {
-      target <- general_fast_dense_tensor(reference$history[[iteration + 1L]])
+      target <- dense_dense_tensor(reference$history[[iteration + 1L]])
       expect_lt(sqrt(sum((current - target)^2)) / max(1, sqrt(sum(target^2))), 2e-10)
     }
     for (component in fit$component_history[[iteration + 1L]]) {
@@ -112,10 +113,10 @@ general_fast_expect_decomposition <- function(fit, observed, reference = NULL) {
     expect_equal(fit$accepted_steps, reference$accepted_steps, tolerance = 1e-13)
 }
 
-test_that("general decomposition API matches dense GS for orders two through six", {
+test_that("decomposition matches the dense reference for orders two to six", {
   for (d in 2:6) for (rank in c(1L, 2L, 3L, 5L, 8L)) {
     dims <- rep(c(2L, 3L, 4L), length.out = d)
-    problem <- general_fast_problem(dims, rank, 9100 + 100 * d + rank)
+    problem <- dense_problem(dims, rank, 9100 + 100 * d + rank)
     initial_before <- serialize(problem$initial, NULL)
     observed_before <- serialize(problem$observed, NULL)
     for (method in c("rgd", "rgn")) {
@@ -123,9 +124,9 @@ test_that("general decomposition API matches dense GS for orders two through six
         component_order = if (rank %% 2L) "fixed" else "decreasing_weight", ridge = 0)
       fit <- segre_decompose(problem$observed, rank, method,
         init = problem$initial, control = ctl, keep_history = TRUE)
-      reference <- general_fast_dense_decomposition(problem$observed,
+      reference <- dense_dense_decomposition(problem$observed,
         fit$component_history[[1L]], method, ctl)
-      general_fast_expect_decomposition(fit, problem$observed, reference)
+      dense_expect_decomposition(fit, problem$observed, reference)
       expect_identical(fit$iterations, 3L)
       expect_identical(fit$stopping_reason, "max_iter")
     }
@@ -142,14 +143,14 @@ test_that("singleton modes and custom overcomplete ranks remain valid", {
     list(dims = c(2L, 1L, 3L, 1L, 2L, 1L), rank = 8L))
   for (j in seq_along(cases)) {
     case <- cases[[j]]
-    problem <- general_fast_problem(case$dims, case$rank, 9400 + j)
+    problem <- dense_problem(case$dims, case$rank, 9400 + j)
     for (method in c("rgd", "rgn")) {
       ctl <- segre_control(max_iter = 3, step_size = .2, step_rule = "fixed", ridge = 0)
       fit <- segre_decompose(problem$observed, case$rank, method,
         init = problem$initial, control = ctl, keep_history = TRUE)
-      reference <- general_fast_dense_decomposition(problem$observed,
+      reference <- dense_dense_decomposition(problem$observed,
         fit$component_history[[1L]], method, ctl)
-      general_fast_expect_decomposition(fit, problem$observed, reference)
+      dense_expect_decomposition(fit, problem$observed, reference)
     }
   }
 })
@@ -157,7 +158,7 @@ test_that("singleton modes and custom overcomplete ranks remain valid", {
 test_that("all initialization routes work across tensor orders", {
   for (d in 2:6) {
     dims <- rep(c(3L, 2L), length.out = d)
-    problem <- general_fast_problem(dims, 2L, 9500 + d)
+    problem <- dense_problem(dims, 2L, 9500 + d)
     custom <- function(x, rank, supplied, tag) {
       expect_equal(x, problem$observed, tolerance = 0)
       expect_identical(rank, 2L)
@@ -175,7 +176,7 @@ test_that("all initialization routes work across tensor orders", {
         control = segre_control(max_iter = 2, step_size = .2, ridge = 0),
         keep_history = TRUE)
       expect_identical(.Random.seed, before_rng)
-      general_fast_expect_decomposition(fit, problem$observed)
+      dense_expect_decomposition(fit, problem$observed)
       expected_method <- switch(route, components = "custom_components",
         custom_function = "custom_function", route)
       expect_identical(fit$initialization$method, expected_method)
@@ -185,16 +186,16 @@ test_that("all initialization routes work across tensor orders", {
 
 test_that("fixed schedules diminishing steps and backtracking preserve their updates", {
   for (d in c(2L, 4L, 6L)) {
-    problem <- general_fast_problem(rep(c(2L, 3L), length.out = d), 3L, 9600 + d)
+    problem <- dense_problem(rep(c(2L, 3L), length.out = d), 3L, 9600 + d)
     for (rule in c("fixed", "diminishing", "backtracking")) {
       schedule <- if (rule == "backtracking") c(8, 6, 4) else c(.4, .3, .2)
       ctl <- segre_control(max_iter = 3, step_size = schedule, step_rule = rule,
         component_order = "decreasing_weight", ridge = 0, max_backtracks = 10)
       fit <- segre_decompose(problem$observed, 3, "rgd", init = problem$initial,
         control = ctl, keep_history = TRUE)
-      reference <- general_fast_dense_decomposition(problem$observed,
+      reference <- dense_dense_decomposition(problem$observed,
         fit$component_history[[1L]], "rgd", ctl)
-      general_fast_expect_decomposition(fit, problem$observed, reference)
+      dense_expect_decomposition(fit, problem$observed, reference)
       if (rule == "backtracking") {
         expect_true(all(diff(fit$objective) <= 1e-10))
         expect_true(all(fit$accepted_steps >= 0))
@@ -206,7 +207,7 @@ test_that("fixed schedules diminishing steps and backtracking preserve their upd
 
 test_that("RGN remains unit-step RGD under general dimensions", {
   for (d in 2:6) {
-    problem <- general_fast_problem(rep(c(2L, 3L), length.out = d), 2L, 9700 + d)
+    problem <- dense_problem(rep(c(2L, 3L), length.out = d), 2L, 9700 + d)
     rgd <- segre_decompose(problem$observed, 2, "rgd", init = problem$initial,
       control = segre_control(max_iter = 3, step_size = 1), keep_history = TRUE)
     rgn <- segre_decompose(problem$observed, 2, "rgn", init = problem$initial,
@@ -218,8 +219,8 @@ test_that("RGN remains unit-step RGD under general dimensions", {
   }
 })
 
-test_that("adapters history and original input storage remain consistent", {
-  problem <- general_fast_problem(c(3L, 2L, 4L), 2L, 9801)
+test_that("aliases, history and inputs are consistent", {
+  problem <- dense_problem(c(3L, 2L, 4L), 2L, 9801)
   dimnames(problem$observed) <- lapply(dim(problem$observed), function(n) letters[seq_len(n)])
   before <- serialize(problem, NULL)
   control <- segre_control(max_iter = 3, ridge = 0)
@@ -273,7 +274,7 @@ test_that("stopping and invalid-input boundaries are explicit", {
     control = segre_control(max_iter = 1, step_rule = "exact_quadratic")), "regression RGD")
 })
 
-general_fast_dense_regression <- function(X, Y, initial, method, control, input_dims) {
+dense_dense_regression <- function(X, Y, initial, method, control, input_dims) {
   components <- initial
   dims <- vapply(initial[[1L]]$U, length, integer(1))
   p <- prod(input_dims)
@@ -291,8 +292,7 @@ general_fast_dense_regression <- function(X, Y, initial, method, control, input_
     for (i in order_i) {
       old <- components[[i]]
       if (method == "rgn") {
-        # The basis is geometry-only; this explicitly materializes the full
-        # observation map and solves its least squares problem by QR.
+        # Dense tangent design and least squares by QR.
         V <- SegreCP:::.build_tangent_basis(old$U)
         design <- vapply(seq_len(ncol(V)), function(j)
           as.numeric(X %*% matrix(V[, j], nrow = p)), numeric(length(Y)))
@@ -301,7 +301,7 @@ general_fast_dense_regression <- function(X, Y, initial, method, control, input_
         proposal <- array(as.numeric(V %*% coordinates), dims)
       } else {
         gradient <- array(as.numeric(crossprod(X, residual)), dims)
-        projected <- general_fast_dense_projection(gradient, old)
+        projected <- dense_dense_projection(gradient, old)
         numerator <- sum(projected^2)
         denominator <- sum((X %*% matrix(projected, nrow = p))^2)
         alpha <- if (is.finite(denominator) && denominator > .Machine$double.eps)
@@ -320,7 +320,7 @@ general_fast_dense_regression <- function(X, Y, initial, method, control, input_
   history
 }
 
-test_that("general scalar and tensor regression retain dense sequential solutions", {
+test_that("regression matches the dense reference", {
   cases <- list(list(input = c(2L, 3L), output = integer(), rank = 1L),
     list(input = c(2L, 3L), output = 2L, rank = 2L),
     list(input = c(2L, 1L, 3L), output = 1L, rank = 3L),
@@ -328,7 +328,7 @@ test_that("general scalar and tensor regression retain dense sequential solution
     list(input = c(2L, 1L, 3L), output = c(2L, 3L, 1L), rank = 8L))
   for (j in seq_along(cases)) {
     case <- cases[[j]]; dims <- c(case$input, case$output)
-    problem <- general_fast_problem(dims, case$rank, 9900 + j)
+    problem <- dense_problem(dims, case$rank, 9900 + j)
     p <- prod(case$input); n <- p + 20L
     X <- qr.Q(qr(matrix(rnorm(n * p), n, p)))
     Y <- X %*% matrix(problem$observed, nrow = p)
@@ -340,15 +340,15 @@ test_that("general scalar and tensor regression retain dense sequential solution
         normalize_regression = normalization)
       fit <- segre_regress(X, Y, case$rank, case$input, case$output,
         method = method, init = problem$initial, control = ctl, keep_history = TRUE)
-      reference <- general_fast_dense_regression(X, Y, fit$component_history[[1L]],
+      reference <- dense_dense_regression(X, Y, fit$component_history[[1L]],
         method, ctl, case$input)
       expect_identical(fit$iterations, 2L)
       expect_identical(fit$control$ridge, 0)
       expect_identical(fit$dims, dims)
       expect_identical(length(fit$component_history), 3L)
       for (iteration in 0:2) {
-        coefficient <- general_fast_dense_tensor(fit$component_history[[iteration + 1L]])
-        expected <- general_fast_dense_tensor(reference[[iteration + 1L]])
+        coefficient <- dense_dense_tensor(fit$component_history[[iteration + 1L]])
+        expected <- dense_dense_tensor(reference[[iteration + 1L]])
         expect_lt(sqrt(sum((coefficient - expected)^2)) / max(1, sqrt(sum(expected^2))), 3e-10)
         residual <- matrix(Y, n) - X %*% matrix(coefficient, nrow = p)
         expect_equal(fit$objective[[iteration + 1L]],

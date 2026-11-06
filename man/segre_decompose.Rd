@@ -3,7 +3,7 @@
 \name{segre_decompose}
 \alias{segre_decompose}
 \alias{cp_decompose}
-\title{Fit a CP decomposition with RGD or RGN}
+\title{CP decomposition by RGD or RGN}
 \usage{
 segre_decompose(
   x,
@@ -30,45 +30,77 @@ cp_decompose(
 )
 }
 \arguments{
-\item{x}{Observed tensor as a base R numeric array or \code{rTensor::Tensor}.}
+\item{x}{Observed tensor: a numeric array with at least two modes or an
+\code{rTensor::Tensor}.}
 
-\item{rank}{Positive target CP rank.}
+\item{rank}{CP rank.}
 
 \item{method}{\code{"rgd"} or \code{"rgn"}.}
 
-\item{init}{\code{"cpca"}, \code{"hosvd"}, \code{"random"}, a custom component list, or a
-custom function; see \code{\link[=cp_initialize]{cp_initialize()}}.}
+\item{init}{Start: \code{"cpca"}, \code{"hosvd"} or \code{"random"} (see
+\code{\link[=cp_initialize]{cp_initialize()}}), a function called as \code{init(x, rank, ...)}, or a list
+of CP components (see \code{\link[=cp_components]{cp_components()}}).}
 
-\item{init_split}{Optional CPCA mode split.}
+\item{init_split}{For \code{init = "cpca"}, the modes that index the rows of the
+unfolding. By default the split that makes the unfolding closest to
+square.}
 
-\item{init_args}{Named list passed to \code{\link[=cp_initialize]{cp_initialize()}}.}
+\item{init_args}{A named list of further arguments for \code{\link[=cp_initialize]{cp_initialize()}} or
+for the function \code{init}.}
 
-\item{seed}{Optional local seed for random initialization.}
+\item{seed}{Seed for \code{init = "random"}. The random number stream of the
+session is left unchanged.}
 
-\item{control}{Controls created by \code{\link[=segre_control]{segre_control()}}.}
+\item{control}{Options from \code{\link[=segre_control]{segre_control()}}. The default RGD step size is
+0.5.}
 
-\item{keep_history}{If \code{TRUE}, retain the CP components at initialization and
-after every completed sweep. This is useful for convergence diagnostics and
-costs \code{rank * sum(dims)} numbers per stored sweep.}
+\item{keep_history}{If \code{TRUE}, the components after every iteration are
+kept in \code{component_history}, for example to compute estimation errors with
+\code{\link[=convergence_data]{convergence_data()}}. This stores \code{rank * sum(dim(x))} numbers per
+iteration.}
 }
 \value{
-A fitted \code{segre_cp_decomposition} object. Its \code{components} field uses
-unit factors and nonnegative weights.
+An object of class \code{c("segre_cp_decomposition", "segre_cp_fit")}: a
+list with elements including
+\itemize{
+\item \code{components}: the estimated CP components, a list of \code{list(lambda, U)}
+with positive weights \code{lambda} and unit factors \code{U};
+\item \code{objective}: the objective at the start and after each iteration;
+\item \code{iterations}, \code{converged}, \code{stopping_reason}: the number of iterations
+run and why the fit stopped;
+\item \code{component_history}: if \code{keep_history = TRUE}, the components at the
+start and after each iteration;
+\item \code{accepted_steps}: the step size of each component update;
+\item \code{initialization}, \code{control}, \code{call}: the start and the options used.
+}
+
+\code{\link[=reconstruct_cp]{reconstruct_cp()}}, \code{\link[=coef]{coef()}}, \code{\link[=summary]{summary()}} and \code{\link[=convergence_data]{convergence_data()}} apply
+to the result. \code{cp_decompose()} is an alias of \code{segre_decompose()}.
 }
 \description{
-For decomposition the observation operator is the identity. Consequently,
-the RGN tangent normal equation is the identity on the current tangent space,
-and RGN is exactly the unit-step RGD update. Every accepted component update
-uses the exact rank-(1,...,1) T-HOSVD retraction of the rank-one-plus-tangent
-proposal.
+Estimates a tensor of CP rank \code{rank} from a noisy observation
+\deqn{Y = \sum_{i=1}^r \lambda_i\, u_{i1} \otimes \cdots \otimes u_{id} + E}{Y = sum_i lambda_i u_i1 o ... o u_id + E}
+by minimizing \eqn{\frac12 \|\sum_i T_i - Y\|_F^2}{(1/2) ||sum_i T_i - Y||_F^2}
+over rank-one tensors \eqn{T_1, \ldots, T_r}{T_1, ..., T_r} with Riemannian
+gradient descent (RGD) or Riemannian Gauss--Newton (RGN) on the Segre
+manifold. One iteration updates each component once, in turn, with the
+others at their current values: the gradient is projected onto the tangent
+space at the component, and the updated tensor is retracted to a rank-one
+tensor by the rank-(1, ..., 1) T-HOSVD. For decomposition, RGN is RGD with
+step size 1.
 }
 \examples{
+# A rank-two 8 x 7 x 6 tensor observed with noise
 set.seed(10)
-u <- lapply(c(5, 6, 4), function(p) {
-  z <- rnorm(p); z / sqrt(sum(z^2))
-})
-signal <- array(3 * Reduce(kronecker, rev(u)), c(5, 6, 4))
-fit <- segre_decompose(signal, rank = 1, method = "rgn", init = "hosvd",
-                       control = segre_control(max_iter = 3))
-reconstruct_cp(fit)
+factors <- lapply(c(8, 7, 6), function(p) qr.Q(qr(matrix(rnorm(2 * p), p))))
+truth <- cp_components(c(5, 3), factors)
+x <- reconstruct_cp(truth) + array(rnorm(8 * 7 * 6, sd = 0.05), c(8, 7, 6))
+fit <- segre_decompose(x, rank = 2, method = "rgn",
+                       control = segre_control(max_iter = 10))
+fit
+cp_relative_error(fit, truth)
+}
+\seealso{
+\code{\link[=segre_regress]{segre_regress()}} for tensor regression and \code{\link[=segre_control]{segre_control()}} for
+the options.
 }

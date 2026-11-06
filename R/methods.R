@@ -1,3 +1,6 @@
+# Print, summary, extraction and prediction methods.
+
+# n x q matrix of responses -> vector, matrix or array, as the input.
 .format_response <- function(value, output_dims) {
   n <- nrow(value)
   if (!length(output_dims)) return(as.numeric(value[, 1L]))
@@ -5,7 +8,7 @@
   array(as.numeric(value), dim = c(n, output_dims))
 }
 
-#' Print SegreCP controls
+#' Print SegreCP options
 #'
 #' @param x A `segre_control` object.
 #' @param ... Unused.
@@ -13,40 +16,92 @@
 #' @method print segre_control
 #' @export
 print.segre_control <- function(x, ...) {
-  cat(sprintf("SegreCP control (%s profile)\n", x$profile))
-  cat(sprintf("  scheme: %s; component order: %s\n",
-              x$scheme, x$component_order))
-  cat(sprintf("  max sweeps: %d; tolerance: %g; RGN ridge: %g\n",
-              x$max_iter, x$tolerance, x$ridge))
+  stopping <- if (x$tolerance > 0) {
+    sprintf("stop when the relative decrease is at most %g", x$tolerance)
+  } else "no early stopping"
+  order <- if (x$component_order == "fixed") "fixed order" else
+    "decreasing weight"
+  step <- if (is.null(x$step_size)) {
+    "0.5 (decomposition), 1 / design_variance (regression)"
+  } else if (length(x$step_size) == 1L) {
+    format(x$step_size)
+  } else sprintf("schedule of length %d", length(x$step_size))
+  rule <- if (!is.null(x$step_rule)) x$step_rule else
+    if (x$profile == "practical") {
+      "fixed (decomposition), backtracking (regression)"
+    } else "fixed"
+  cat(sprintf("SegreCP options (%s profile)\n", x$profile))
+  cat(sprintf("  iterations: at most %d, %s\n", x$max_iter, stopping))
+  cat(sprintf("  component updates: one at a time, %s\n", order))
+  cat(sprintf("  RGD step: %s\n", step))
+  cat(sprintf("  RGD step rule: %s\n", rule))
+  cat(sprintf("  RGN ridge: %g\n", x$ridge))
+  cat(sprintf("  regression normalization: %s\n", x$normalize_regression))
   invisible(x)
+}
+
+.fit_title <- function(x) {
+  task <- if (x$task == "decomposition") "CP decomposition" else
+    "CP tensor regression"
+  sprintf("%s by %s, rank %d (%s profile)", task, toupper(x$method), x$rank,
+          x$profile)
+}
+
+.fit_dimensions <- function(x) {
+  if (x$task == "decomposition") {
+    return(sprintf("dimensions: %s", paste(x$dims, collapse = " x ")))
+  }
+  input <- paste(x$input_dims, collapse = " x ")
+  if (!length(x$output_dims)) {
+    return(sprintf("coefficient dimensions: %s", input))
+  }
+  sprintf("coefficient dimensions: %s (input) x %s (output)", input,
+          paste(x$output_dims, collapse = " x "))
+}
+
+.fit_stop <- function(x) {
+  if (x$stopping_reason == "relative_objective_change") {
+    "converged: relative decrease of the objective at most the tolerance"
+  } else "max_iter reached"
+}
+
+.fit_weights <- function(x) {
+  vapply(x$components, `[[`, numeric(1L), "lambda")
 }
 
 #' Print a SegreCP fit
 #'
-#' @param x A fitted object from [segre_decompose()] or [segre_regress()].
+#' @param x A fit from [segre_decompose()] or [segre_regress()].
 #' @param ... Unused.
 #' @return `x`, invisibly.
 #' @method print segre_cp_fit
 #' @export
 print.segre_cp_fit <- function(x, ...) {
-  label <- if (x$task == "decomposition") "CP decomposition" else
-    "CP tensor regression"
-  cat(sprintf("SegreCP %s fit\n", label))
-  cat(sprintf("  method: %s; profile: %s; rank: %d\n",
-              toupper(x$method), x$profile, x$rank))
-  cat(sprintf("  dimensions: %s\n", paste(x$dims, collapse = " x ")))
-  cat(sprintf("  sweeps: %d; stop: %s\n", x$iterations,
-              x$stopping_reason))
-  cat(sprintf("  objective: %.8g -> %.8g\n",
-              x$objective[[1L]], utils::tail(x$objective, 1L)))
+  cat(.fit_title(x), "\n", sep = "")
+  cat("  ", .fit_dimensions(x), "\n", sep = "")
+  cat(sprintf("  iterations: %d (%s)\n", x$iterations, .fit_stop(x)))
+  cat(sprintf("  objective: %s -> %s\n", format(x$objective[[1L]], digits = 6),
+              format(utils::tail(x$objective, 1L), digits = 6)))
+  cat(sprintf("  weights: %s\n",
+              paste(format(.fit_weights(x), digits = 4), collapse = "  ")))
   invisible(x)
 }
 
 #' Summarize a SegreCP fit
 #'
-#' @param object A fitted object from [segre_decompose()] or [segre_regress()].
+#' @param object A fit from [segre_decompose()] or [segre_regress()].
+#' @param x An object returned by `summary()`.
 #' @param ... Unused.
-#' @return A `summary.segre_cp_fit` list.
+#' @return `summary()` returns a list of class `summary.segre_cp_fit` with the
+#'   task, method, profile, rank, dimensions, component weights, number of
+#'   iterations, stopping reason, the objective at the start and at the end and
+#'   their ratio, and for regression RGN the range of the estimated condition
+#'   numbers of the normal equations. Its `print()` method returns `x`
+#'   invisibly.
+#' @examples
+#' set.seed(1)
+#' x <- array(rnorm(60), c(5, 4, 3))
+#' summary(segre_decompose(x, rank = 1, control = segre_control(max_iter = 5)))
 #' @export
 summary.segre_cp_fit <- function(object, ...) {
   condition <- if (object$task == "regression" && object$method == "rgn") {
@@ -60,6 +115,9 @@ summary.segre_cp_fit <- function(object, ...) {
     profile = object$profile,
     rank = object$rank,
     dims = object$dims,
+    input_dims = object$input_dims,
+    output_dims = object$output_dims,
+    weights = .fit_weights(object),
     iterations = object$iterations,
     converged = object$converged,
     stopping_reason = object$stopping_reason,
@@ -71,42 +129,45 @@ summary.segre_cp_fit <- function(object, ...) {
   ), class = "summary.segre_cp_fit")
 }
 
-#' Print a SegreCP fit summary
-#'
-#' @param x An object returned by [summary.segre_cp_fit()].
-#' @param ... Unused.
-#' @return `x`, invisibly.
+#' @rdname summary.segre_cp_fit
 #' @method print summary.segre_cp_fit
 #' @export
 print.summary.segre_cp_fit <- function(x, ...) {
-  cat(sprintf("%s / %s (%s profile)\n",
-              if (x$task == "decomposition") "CP decomposition" else
-                "CP tensor regression",
-              toupper(x$method), x$profile))
-  cat(sprintf("  rank %d; dimensions %s\n", x$rank,
-              paste(x$dims, collapse = " x ")))
-  cat(sprintf("  objective %.8g -> %.8g after %d sweeps\n",
-              x$initial_objective, x$final_objective, x$iterations))
-  cat(sprintf("  stop: %s\n", x$stopping_reason))
+  cat(.fit_title(x), "\n", sep = "")
+  cat("  ", .fit_dimensions(x), "\n", sep = "")
+  cat(sprintf("  iterations: %d (%s)\n", x$iterations, .fit_stop(x)))
+  cat(sprintf("  objective: %s -> %s (ratio %s)\n",
+              format(x$initial_objective, digits = 6),
+              format(x$final_objective, digits = 6),
+              format(x$objective_ratio, digits = 4)))
+  cat(sprintf("  weights: %s\n",
+              paste(format(x$weights, digits = 6), collapse = "  ")))
   if (!is.null(x$normal_condition)) {
-    cat(sprintf("  restricted-normal condition: min %.4g, median %.4g, max %.4g\n",
+    cat(sprintf(paste("  condition number of the RGN normal equations:",
+                      "min %.4g, median %.4g, max %.4g\n"),
                 x$normal_condition[[1L]], x$normal_condition[[2L]],
                 x$normal_condition[[3L]]))
   }
   invisible(x)
 }
 
-#' Extract a fitted CP coefficient tensor
+#' Estimated tensor of a SegreCP fit
 #'
-#' @param object A `segre_cp_fit` object.
-#' @param format A base R `"array"` or `"rTensor"` Tensor.
+#' `coef()` and `as.array()` return the estimated tensor as a dense array: the
+#' low-rank tensor for [segre_decompose()] and the coefficient tensor, with
+#' dimensions `c(input_dims, output_dims)`, for [segre_regress()]. The CP
+#' components themselves are in `object$components`.
+#'
+#' @param object,x A fit from [segre_decompose()] or [segre_regress()].
+#' @param format `"array"` or `"rTensor"`.
 #' @param ... Unused.
-#' @return The dense fitted tensor.
+#' @return A dense array, or an `rTensor::Tensor` for `format = "rTensor"`.
 #' @export
 coef.segre_cp_fit <- function(object, format = c("array", "rTensor"), ...) {
   reconstruct_cp(object$components, match.arg(format))
 }
 
+#' @rdname coef.segre_cp_fit
 #' @export
 as.array.segre_cp_fit <- function(x, ...) {
   reconstruct_cp(x$components, "array")
@@ -114,9 +175,13 @@ as.array.segre_cp_fit <- function(x, ...) {
 
 #' Convert to an rTensor Tensor
 #'
-#' @param x A base R tensor array or a fitted `segre_cp_fit` object.
+#' @param x A numeric array, or a fit from [segre_decompose()] or
+#'   [segre_regress()] (converted to its estimated tensor).
 #' @param ... Unused.
 #' @return An `rTensor::Tensor`.
+#' @seealso [as_segre_array()] for the conversion in the other direction.
+#' @examples
+#' as_rtensor(array(1:8, c(2, 2, 2)))
 #' @export
 as_rtensor <- function(x, ...) UseMethod("as_rtensor")
 
@@ -130,14 +195,24 @@ as_rtensor.segre_cp_fit <- function(x, ...) {
   reconstruct_cp(x$components, "rTensor")
 }
 
-#' Predict from a SegreCP regression fit
+#' Predictions, fitted values and residuals of a SegreCP regression
 #'
-#' @param object A `segre_cp_regression` fit.
-#' @param newdata New tensor covariates in any format accepted by
+#' @param object A fit from [segre_regress()].
+#' @param newdata Design for the new observations, in any format accepted by
 #'   [segre_regress()].
 #' @param ... Unused.
-#' @return A vector for scalar response, a matrix for a one-mode tensor response,
-#'   or an array with dimensions `c(n, output_dims)` for multiple output modes.
+#' @return A vector for a scalar response, a matrix for a response with one
+#'   mode, and otherwise an array with dimensions `c(n, output_dims)`.
+#'   `fitted()` and `residuals()` refer to the data used for the fit, on their
+#'   original scale.
+#' @examples
+#' set.seed(2)
+#' X <- matrix(rnorm(60 * 6), 60)
+#' y <- as.numeric(X %*% rep(c(1, -1), 3)) + rnorm(60, sd = 0.1)
+#' fit <- segre_regress(X, y, rank = 1, input_dims = c(2, 3),
+#'                      control = segre_control(max_iter = 5))
+#' predict(fit, X[1:2, ])
+#' head(residuals(fit))
 #' @export
 predict.segre_cp_regression <- function(object, newdata, ...) {
   design <- .as_design_matrix(newdata, object$input_dims)
@@ -152,35 +227,33 @@ predict.segre_cp_regression <- function(object, newdata, ...) {
   .format_response(value, object$output_dims)
 }
 
+#' @rdname predict.segre_cp_regression
 #' @export
 fitted.segre_cp_regression <- function(object, ...) {
   .format_response(object$fitted_values, object$output_dims)
 }
 
+#' @rdname predict.segre_cp_regression
 #' @export
 residuals.segre_cp_regression <- function(object, ...) {
   .format_response(object$residual_values, object$output_dims)
 }
 
-#' Extract an empirical convergence trajectory
+#' Objective and estimation error at each iteration
 #'
-#' Returns the objective value at initialization and after every completed
-#' sweep. If `truth` is supplied, the fit must have been run with
-#' `keep_history = TRUE`; the function then also computes the relative
-#' Frobenius error of the reconstructed CP tensor without forming a dense
-#' tensor.
+#' Returns the objective at the start and after each iteration of a fit. If
+#' `truth` is given, the fit must have been run with `keep_history = TRUE`, and
+#' the relative error of the estimated tensor after each iteration is added
+#' (see [cp_relative_error()]). This error is computed from inner products of
+#' the factors, so values below about `1e-7` are not accurate. For such small
+#' errors, compare the dense tensors from [reconstruct_cp()].
 #'
-#' The optional reconstruction error is an empirical whole-tensor metric. It
-#' is not the permutation-matched component metric used in some theoretical
-#' recursions in the manuscript. The CP-Gram identity can lose relative
-#' accuracy through cancellation extremely close to exact recovery; use a
-#' direct dense difference or a stable matched-component diagnostic when the
-#' numerical floor itself is the estimand.
-#'
-#' @param object A fitted object from [segre_decompose()] or [segre_regress()].
-#' @param truth Optional ground-truth CP component list or fitted object.
-#' @return A data frame with one row for iteration zero and each completed
-#'   sweep.
+#' @param object A fit from [segre_decompose()] or [segre_regress()].
+#' @param truth Optional true CP components (see [cp_components()]).
+#' @return A data frame with one row per iteration (0 is the start): the
+#'   objective, its ratio to the starting value, its relative decrease from the
+#'   previous iteration, and if `truth` is given the relative Frobenius error
+#'   `relative_frobenius_error`.
 #' @examples
 #' dims <- c(3, 4, 2)
 #' factors <- lapply(dims, function(p) matrix(c(1, rep(0, p - 1)), p, 1))

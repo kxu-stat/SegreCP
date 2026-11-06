@@ -2,20 +2,23 @@
 % Please edit documentation in R/data-components.R
 \name{reconstruct_cp}
 \alias{reconstruct_cp}
-\title{Reconstruct a tensor from CP components}
+\title{Dense tensor from CP components}
 \usage{
 reconstruct_cp(components, format = c("array", "rTensor"))
 }
 \arguments{
-\item{components}{A component list returned by \code{\link[=cp_components]{cp_components()}},
-\code{\link[=cp_initialize]{cp_initialize()}}, \code{\link[=cp_decompose]{cp_decompose()}}, or \code{\link[=cp_regression]{cp_regression()}}. A fitted object
-is also accepted.}
+\item{components}{A list of components \code{list(lambda, U)} (see
+\code{\link[=cp_components]{cp_components()}}) or a fit from \code{\link[=segre_decompose]{segre_decompose()}} or \code{\link[=segre_regress]{segre_regress()}}.}
 
-\item{format}{Return a base R \code{"array"} or an \code{"rTensor"} Tensor.}
+\item{format}{\code{"array"} or \code{"rTensor"}.}
 }
 \value{
-The reconstructed dense tensor.
+The tensor \eqn{\sum_i \lambda_i\, u_{i1} \otimes \cdots \otimes u_{id}}{sum_i lambda_i u_i1 o ... o u_id}.
 }
 \description{
-Reconstruct a tensor from CP components
+Dense tensor from CP components
+}
+\examples{
+comps <- cp_components(2, list(c(1, 0), c(0, 1, 0)))
+reconstruct_cp(comps)
 }

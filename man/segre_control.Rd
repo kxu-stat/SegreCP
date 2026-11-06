@@ -2,7 +2,7 @@
 % Please edit documentation in R/control.R
 \name{segre_control}
 \alias{segre_control}
-\title{Control RGD and RGN fitting}
+\title{Options for RGD and RGN}
 \usage{
 segre_control(
   profile = c("manuscript", "practical"),
@@ -22,38 +22,67 @@ segre_control(
 \arguments{
 \item{profile}{\code{"manuscript"} or \code{"practical"}.}
 
-\item{max_iter}{Maximum number of complete component sweeps.}
+\item{max_iter}{Maximum number of iterations.}
 
-\item{tolerance}{Relative loss-change tolerance. Zero disables early stopping.}
+\item{tolerance}{The fit stops when the objective decreases by a relative
+amount of at most \code{tolerance} in an iteration. Zero (the default of the
+manuscript profile) runs all \code{max_iter} iterations.}
 
-\item{step_size}{RGD step size or schedule. \code{NULL} selects the fixed step
-covered by the convergence results of the paper: 0.5 for decomposition and
-\code{1 / design_variance} (that is, \eqn{\sigma_X^{-2}}) for regression.}
+\item{step_size}{RGD step size: one number, or one per iteration. \code{NULL}
+gives 0.5 for decomposition and \code{1 / design_variance} (that is,
+\eqn{\sigma_X^{-2}}) for regression, the fixed steps covered by the
+convergence results of the paper. RGN does not use a step size.}
 
-\item{step_rule}{\code{"fixed"}, \code{"diminishing"}, \code{"backtracking"}, or
-\code{"exact_quadratic"}. \code{NULL} uses a profile/task-specific default.}
+\item{step_rule}{How RGD uses \code{step_size}: \code{"fixed"}; \code{"diminishing"}
+(\code{step_size / sqrt(t)} in iteration \code{t}); \code{"backtracking"} (start from
+\code{step_size} and shrink it until the Armijo condition holds); or, for
+regression only, \code{"exact_quadratic"} (the step that minimizes the
+objective along the projected gradient before the retraction, restricted
+to \verb{[1e-10, 100]}). \code{NULL} gives \code{"backtracking"} for regression with the
+practical profile and \code{"fixed"} otherwise.}
 
-\item{component_order}{\code{"fixed"} or \code{"decreasing_weight"}. \code{NULL} uses the
-profile default.}
+\item{component_order}{\code{"fixed"} (1, ..., r) or \code{"decreasing_weight"}
+(largest current weight first). \code{NULL} uses the profile default.}
 
-\item{ridge}{Nonnegative RGN ridge. \code{NULL} selects zero in both profiles.
-A positive value adds ridge regularization to the RGN normal equation.}
+\item{ridge}{Nonnegative ridge added to the RGN normal equation in
+regression. The default 0 gives RGN as in the paper.}
 
-\item{normalize_regression}{If \code{"sqrt_n"}, divide both the design and response
-by \code{sqrt(n)} before fitting. Use \code{"none"} for data already expressed in the
-normalized-operator convention.}
+\item{normalize_regression}{\code{"sqrt_n"} divides the design and the response
+by \code{sqrt(n)}, so that the objective is an average over observations.
+\code{"none"} uses the data as given, for data already divided by \code{sqrt(n)}.}
 
-\item{trace}{Print one line per completed sweep.}
+\item{trace}{If \code{TRUE}, report the objective after every iteration.}
 
-\item{armijo, backtrack_factor, max_backtracks}{Backtracking controls.}
+\item{armijo, backtrack_factor, max_backtracks}{Backtracking: the search
+stops at a step \code{alpha} that decreases the objective by at least
+\code{armijo * alpha} times the squared norm of the projected gradient, and
+otherwise multiplies \code{alpha} by \code{backtrack_factor}, for at most
+\code{max_backtracks} trials. The update uses the trial step with the smallest
+objective, and leaves the component unchanged if no trial decreases it.}
 }
 \value{
-A \code{segre_control} object.
+An object of class \code{segre_control}.
 }
 \description{
-The \code{"manuscript"} profile uses sequential Gauss--Seidel component updates,
-fixed component order and RGD step size, exact structured T-HOSVD retraction,
-and a fixed iteration cap. The \code{"practical"} profile enables weight-based
-component ordering, a loss-change stopping rule, and regression RGD backtracking.
-Both profiles default to \code{ridge = 0}.
+Sets the number of iterations, the stopping rule, the RGD step size and the
+order of the component updates for \code{\link[=segre_decompose]{segre_decompose()}} and
+\code{\link[=segre_regress]{segre_regress()}}. One iteration updates each of the CP components once,
+in turn.
+}
+\details{
+The two profiles set defaults for the options left \code{NULL}:
+\itemize{
+\item \code{"manuscript"}: the algorithms analyzed in the paper. Components are
+updated in the order 1, ..., r, RGD uses a fixed step, and \code{max_iter}
+iterations are run.
+\item \code{"practical"}: in each iteration the components are updated in
+decreasing order of their weights, the fit stops when the relative
+decrease of the objective is at most \code{tolerance = 1e-6}, and regression
+RGD uses backtracking.
+}
+}
+\examples{
+segre_control()
+segre_control(profile = "practical", max_iter = 200)
+segre_control(max_iter = 50, step_size = 0.3)
 }

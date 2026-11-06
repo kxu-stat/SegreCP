@@ -1,110 +1,95 @@
-.public_to_internal_components <- function(components, input_order, output_order) {
-  if (!output_order) return(components)
-  permutation <- c(input_order + seq_len(output_order), seq_len(input_order))
-  lapply(components, function(comp) {
-    list(lambda = comp$lambda, U = comp$U[permutation])
-  })
-}
-
-.internal_to_public_components <- function(components, input_order, output_order) {
-  if (!output_order) return(components)
-  permutation <- c(output_order + seq_len(input_order), seq_len(output_order))
-  lapply(components, function(comp) {
-    list(lambda = comp$lambda, U = comp$U[permutation])
-  })
-}
-
-.regression_gradient_stats <- function(X, residual, component, dims,
-                                       output_order, need_gram = FALSE) {
-  if (ncol(residual) == 1L) {
-    design <- .compute_tangent_design(X, component$U)
-    ans <- list(rhs = as.numeric(crossprod(design, residual)))
-    if (need_gram) ans$gram <- crossprod(design)
-    return(ans)
-  }
-  .tensor_tangent_statistics(
-    X, residual, component$U, dims, output_order,
-    include_gram = need_gram
-  )
-}
-
-.solve_scalar_tangent <- function(design, target, ridge) {
-  gram <- crossprod(design)
-  if (ridge > 0) gram <- gram + ridge * diag(ncol(design))
-  rhs <- as.numeric(crossprod(design, target))
-  solution <- tryCatch(
-    solve(gram, rhs),
-    error = function(e) stop(
-      "The restricted tangent normal operator is singular; use a better ",
-      "initialization or set a positive `ridge` in the practical profile.",
-      call. = FALSE
-    )
-  )
-  list(solution = solution, condition = kappa(gram, exact = FALSE))
-}
-
-.coefficient_moment <- function(X, Y, input_dims, output_dims,
-                                design_variance) {
-  moment <- crossprod(X, Y) / design_variance
-  dims <- c(input_dims, output_dims)
-  array(as.numeric(moment), dim = dims)
-}
-
-#' Fit CP tensor regression with RGD or RGN
+#' Tensor regression with a low-CP-rank coefficient by RGD or RGN
 #'
-#' Fits scalar-on-tensor or tensor-on-tensor least squares with a CP-structured
-#' coefficient. Public coefficient modes always follow the manuscript order:
-#' **input modes first, output modes second**. Internally the implementation
-#' applies a fixed output-first permutation to exploit the exact separated
-#' tangent design; the returned factors are permuted back.
+#' Fits scalar-on-tensor or tensor-on-tensor regression
+#' \deqn{Y_m = \langle X_m, B \rangle + E_m, \qquad m = 1, \ldots, n,}{Y_m = <X_m, B> + E_m, m = 1, ..., n,}
+#' where \eqn{X_m} has dimensions `input_dims`, the response \eqn{Y_m} is a
+#' scalar or has dimensions `output_dims`, the coefficient \eqn{B} has
+#' dimensions `c(input_dims, output_dims)` and CP rank `rank`, and
+#' \eqn{\langle X_m, B \rangle}{<X_m, B>} contracts the input modes. The fit
+#' minimizes
+#' \eqn{\frac{1}{2n} \sum_m \|Y_m - \langle X_m, B \rangle\|_F^2}{(1/(2n)) sum_m ||Y_m - <X_m, B>||_F^2}
+#' (or the same sum without the factor \eqn{1/n} if
+#' `normalize_regression = "none"` in [segre_control()]) by Riemannian
+#' gradient descent (RGD) or Riemannian Gauss--Newton (RGN) over the rank-one
+#' components of \eqn{B}. One iteration updates each component once, in turn,
+#' with the others at their current values. RGN solves the least-squares
+#' problem restricted to the tangent space at the component. Every update is
+#' retracted to a rank-one tensor by the rank-(1, ..., 1) T-HOSVD.
 #'
-#' `profile = "manuscript"` (the default in [segre_control()]) uses normalized
-#' observations, fixed component order, the fixed RGD step
-#' \eqn{\alpha = \sigma_X^{-2}} unless `step_size` is given, exact T-HOSVD, no
-#' early stopping, and unregularized RGN. The practical profile records every
-#' deviation explicitly in the fit object.
+#' The CPCA and HOSVD starts are computed from the moment
+#' \eqn{\frac{1}{n \sigma_X^2} \sum_m X_m \otimes Y_m}{sum_m (X_m o Y_m) / (n sigma_X^2)}
+#' (without the factor \eqn{1/n} if `normalize_regression = "none"`), which
+#' estimates \eqn{B} when the design entries are uncorrelated with variance
+#' \eqn{\sigma_X^2} (`design_variance`).
 #'
-#' @param X Tensor covariates. The efficient format is an `n` by `p_in` matrix.
-#'   Also accepted: an array with dimensions `c(n, input_dims)`, an
-#'   `rTensor::Tensor` with those dimensions, or a length-`n` list of tensors.
-#' @param Y A length-`n` vector for scalar response; an `n` by `q` matrix; an
-#'   array with dimensions `c(n, output_dims)`; an `rTensor::Tensor`; or a list
-#'   of response tensors.
-#' @param rank Positive target CP rank.
-#' @param input_dims Input tensor mode dimensions. Required when a matrix `X`
-#'   should represent more than one input mode.
-#' @param output_dims Output tensor mode dimensions. For a matrix `Y`, omission
-#'   treats its columns as one output mode. A vector `Y` is scalar.
+#' @param X Design. The most efficient format is an `n` by `prod(input_dims)`
+#'   matrix whose row `m` is `as.vector(X_m)`. Also accepted: an array with
+#'   dimensions `c(n, input_dims)`, an `rTensor::Tensor` with these dimensions,
+#'   or a list of `n` arrays.
+#' @param Y Response: a numeric vector of length `n` (scalar response), an `n`
+#'   by `prod(output_dims)` matrix, an array with dimensions
+#'   `c(n, output_dims)`, an `rTensor::Tensor`, or a list of `n` arrays.
+#' @param rank CP rank of the coefficient.
+#' @param input_dims Dimensions of `X_m`. Needed only when `X` is a matrix and
+#'   `X_m` has more than one mode.
+#' @param output_dims Dimensions of `Y_m`. Needed only when `Y` is a matrix
+#'   and `Y_m` has more than one mode.
 #' @param method `"rgd"` or `"rgn"`.
-#' @param init Initialization accepted by [cp_initialize()]. CPCA and HOSVD are
-#'   both applied to the normalized adjoint moment in public input-output order.
-#' @param init_split Optional CPCA mode split in public coefficient-mode order.
-#' @param init_args Named list passed to [cp_initialize()].
-#' @param seed Optional local seed for random initialization.
-#' @param design_variance Positive design-entry variance \eqn{\sigma_X^2}. It
-#'   scales the initialization moment: with `normalize_regression = "sqrt_n"`,
-#'   the moment is `crossprod(X, Y) / (n * design_variance)` on the original data
-#'   scale. The default RGD step is `1 / design_variance`.
-#' @param control Controls from [segre_control()].
-#' @param keep_history If `TRUE`, retain the public-order CP components at
-#'   initialization and after every completed sweep. This is intended for
-#'   convergence diagnostics and simulation reproducibility.
-#' @return A `segre_cp_regression` fit. `components` and [coef()] use input modes
-#'   followed by output modes.
+#' @param init Start: `"cpca"`, `"hosvd"` or `"random"` (see
+#'   [cp_initialize()]), a function called as `init(moment, rank, ...)`, or a
+#'   list of CP components of the coefficient (see [cp_components()]).
+#' @param init_split For `init = "cpca"`, the coefficient modes that index the
+#'   rows of the unfolding (input modes are numbered first). By default the
+#'   split that makes the unfolding closest to square.
+#' @param init_args A named list of further arguments for [cp_initialize()] or
+#'   for the function `init`.
+#' @param seed Seed for `init = "random"`. The random number stream of the
+#'   session is left unchanged.
+#' @param design_variance Variance \eqn{\sigma_X^2} of the design entries. It
+#'   scales the start and sets the default RGD step \eqn{1/\sigma_X^2}.
+#' @param control Options from [segre_control()].
+#' @param keep_history If `TRUE`, the components after every iteration are
+#'   kept in `component_history`, for example to compute estimation errors with
+#'   [convergence_data()].
+#' @return An object of class `c("segre_cp_regression", "segre_cp_fit")`: a
+#'   list with elements including
+#'   * `components`: the CP components of the estimated coefficient, a list of
+#'     `list(lambda, U)` with positive weights `lambda` and unit factors `U`
+#'     (input modes first, then output modes);
+#'   * `objective`: the objective at the start and after each iteration;
+#'   * `iterations`, `converged`, `stopping_reason`: the number of iterations
+#'     run and why the fit stopped;
+#'   * `component_history`: if `keep_history = TRUE`, the components at the
+#'     start and after each iteration;
+#'   * `accepted_steps`: the RGD step of each component update (`NA` for RGN);
+#'   * `normal_condition`: an estimate of the condition number of each RGN
+#'     normal equation (`NA` for RGD);
+#'   * `fitted_values`, `residual_values`: `n` by `prod(output_dims)`
+#'     matrices on the scale of the data;
+#'   * `initialization`, `control`, `call`: the start and the options used.
+#'
+#'   [coef()], [predict()], [fitted()], [residuals()], [summary()] and
+#'   [convergence_data()] apply to the result. `cp_regression()` is an alias
+#'   of `segre_regress()`.
+#' @seealso [segre_decompose()] for CP decomposition and [segre_control()] for
+#'   the options.
 #' @examples
+#' # Scalar response, 3 x 4 matrix covariates, rank-one coefficient
 #' set.seed(2)
 #' n <- 80
-#' input_dims <- c(3, 4)
-#' X <- matrix(rnorm(n * prod(input_dims)), n)
-#' u1 <- c(1, 0, 0)
-#' u2 <- c(1, 0, 0, 0)
-#' beta <- 2 * kronecker(u2, u1)
-#' y <- as.numeric(X %*% beta + rnorm(n, sd = 0.05))
-#' fit <- segre_regress(
-#'   X, y, rank = 1, input_dims = input_dims, method = "rgn",
-#'   init = "hosvd", control = segre_control(max_iter = 3)
-#' )
-#' predict(fit, X[1:3, , drop = FALSE])
+#' X <- matrix(rnorm(n * 12), n)
+#' beta <- 2 * outer(c(1, 0, 0), c(0, 1, 0, 0))
+#' y <- as.numeric(X %*% as.vector(beta)) + rnorm(n, sd = 0.05)
+#' fit <- segre_regress(X, y, rank = 1, input_dims = c(3, 4), method = "rgn",
+#'                      control = segre_control(max_iter = 5))
+#' fit
+#' predict(fit, X[1:3, ])
+#'
+#' # Matrix response: one output mode of dimension 2
+#' Y <- cbind(y, -y) + rnorm(2 * n, sd = 0.05)
+#' fit2 <- segre_regress(X, Y, rank = 1, input_dims = c(3, 4),
+#'                       control = segre_control(max_iter = 5))
+#' dim(coef(fit2))
 #' @export
 segre_regress <- function(
     X, Y, rank,
@@ -151,20 +136,10 @@ segre_regress <- function(
   Y_work <- if (normalization == 1 && is.double(Y_original)) Y_original else
     Y_original * normalization
 
+  # A supplied component list needs only the coefficient dimensions, so the
+  # moment X'Y is formed only for the other starts.
   if (is.list(init)) {
-    if (!is.list(init_args)) stop("`init_args` must be a list.", call. = FALSE)
-    # Supplied components use only the coefficient dimensions, not X'Y.
-    # Retain cp_initialize's argument matching and first validation pass.
-    initialize_components <- function(x, rank, method, split = NULL,
-                                      seed = NULL,
-                                      project_random_weights = TRUE, ...) {
-      list(comps = .validate_components(method, public_dims, rank),
-           method = "custom_components")
-    }
-    initialization <- do.call(initialize_components, c(
-      list(x = NULL, rank = rank, method = init, split = init_split,
-           seed = seed), init_args
-    ))
+    initialization <- .component_start(init, public_dims, rank, init_args)
   } else {
     moment <- .coefficient_moment(
       X_work, Y_work, input_dims, output_dims, design_variance
@@ -263,8 +238,9 @@ segre_regress <- function(
         }
         accepted_steps[iteration, i] <- alpha
       } else {
-        # The tangent-space least-squares target equals T_i - Delta_i, where
-        # Delta_i solves the manuscript RGN normal equation.
+        # RGN: least squares over the tangent space at T_i with the other
+        # components fixed. Its solution is T_i - Delta_i, where Delta_i solves
+        # the RGN normal equation of the paper.
         target <- Y_work - (prediction - old_prediction)
         if (ncol(Y_work) == 1L) {
           tangent_design <- .compute_tangent_design(X_work, old_component$U)
@@ -309,7 +285,7 @@ segre_regress <- function(
         .internal_to_public_components(components, input_order, output_order)
     }
     if (control$trace) {
-      message(sprintf("sweep %d: objective = %.8g", iteration,
+      message(sprintf("iteration %d: objective = %.8g", iteration,
                       objective[[iteration + 1L]]))
     }
     if (control$tolerance > 0) {
@@ -331,8 +307,8 @@ segre_regress <- function(
   public_components <- .validate_components(
     public_components, public_dims, rank
   )
-  # Re-sum component predictions, rather than the incrementally updated sum,
-  # to preserve the original final summation order without rescanning X.
+  # Fitted values on the scale of the data. Without normalization the stored
+  # component predictions are reused.
   fitted_values <- if (normalization == 1) Reduce(`+`, predictions) else
     Reduce(`+`, lapply(components, function(comp) {
       .apply_rank1_operator(comp, X_original, split)$prediction
@@ -370,3 +346,59 @@ segre_regress <- function(
 #' @rdname segre_regress
 #' @export
 cp_regression <- segre_regress
+
+# Internal helpers ---------------------------------------------------------
+
+# Public order: input modes, then output modes. Internal order: output modes,
+# then input modes.
+.public_to_internal_components <- function(components, input_order, output_order) {
+  if (!output_order) return(components)
+  permutation <- c(input_order + seq_len(output_order), seq_len(input_order))
+  lapply(components, function(comp) {
+    list(lambda = comp$lambda, U = comp$U[permutation])
+  })
+}
+
+.internal_to_public_components <- function(components, input_order, output_order) {
+  if (!output_order) return(components)
+  permutation <- c(output_order + seq_len(input_order), seq_len(output_order))
+  lapply(components, function(comp) {
+    list(lambda = comp$lambda, U = comp$U[permutation])
+  })
+}
+
+.regression_gradient_stats <- function(X, residual, component, dims,
+                                       output_order, need_gram = FALSE) {
+  if (ncol(residual) == 1L) {
+    design <- .compute_tangent_design(X, component$U)
+    ans <- list(rhs = as.numeric(crossprod(design, residual)))
+    if (need_gram) ans$gram <- crossprod(design)
+    return(ans)
+  }
+  .tensor_tangent_statistics(
+    X, residual, component$U, dims, output_order,
+    include_gram = need_gram
+  )
+}
+
+.solve_scalar_tangent <- function(design, target, ridge) {
+  gram <- crossprod(design)
+  if (ridge > 0) gram <- gram + ridge * diag(ncol(design))
+  rhs <- as.numeric(crossprod(design, target))
+  solution <- tryCatch(
+    solve(gram, rhs),
+    error = function(e) stop(
+      "The restricted tangent normal operator is singular; use a better ",
+      "start or set a positive `ridge` in segre_control().",
+      call. = FALSE
+    )
+  )
+  list(solution = solution, condition = kappa(gram, exact = FALSE))
+}
+
+.coefficient_moment <- function(X, Y, input_dims, output_dims,
+                                design_variance) {
+  moment <- crossprod(X, Y) / design_variance
+  dims <- c(input_dims, output_dims)
+  array(as.numeric(moment), dim = dims)
+}

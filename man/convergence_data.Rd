@@ -2,33 +2,28 @@
 % Please edit documentation in R/methods.R
 \name{convergence_data}
 \alias{convergence_data}
-\title{Extract an empirical convergence trajectory}
+\title{Objective and estimation error at each iteration}
 \usage{
 convergence_data(object, truth = NULL)
 }
 \arguments{
-\item{object}{A fitted object from \code{\link[=segre_decompose]{segre_decompose()}} or \code{\link[=segre_regress]{segre_regress()}}.}
+\item{object}{A fit from \code{\link[=segre_decompose]{segre_decompose()}} or \code{\link[=segre_regress]{segre_regress()}}.}
 
-\item{truth}{Optional ground-truth CP component list or fitted object.}
+\item{truth}{Optional true CP components (see \code{\link[=cp_components]{cp_components()}}).}
 }
 \value{
-A data frame with one row for iteration zero and each completed
-sweep.
+A data frame with one row per iteration (0 is the start): the
+objective, its ratio to the starting value, its relative decrease from the
+previous iteration, and if \code{truth} is given the relative Frobenius error
+\code{relative_frobenius_error}.
 }
 \description{
-Returns the objective value at initialization and after every completed
-sweep. If \code{truth} is supplied, the fit must have been run with
-\code{keep_history = TRUE}; the function then also computes the relative
-Frobenius error of the reconstructed CP tensor without forming a dense
-tensor.
-}
-\details{
-The optional reconstruction error is an empirical whole-tensor metric. It
-is not the permutation-matched component metric used in some theoretical
-recursions in the manuscript. The CP-Gram identity can lose relative
-accuracy through cancellation extremely close to exact recovery; use a
-direct dense difference or a stable matched-component diagnostic when the
-numerical floor itself is the estimand.
+Returns the objective at the start and after each iteration of a fit. If
+\code{truth} is given, the fit must have been run with \code{keep_history = TRUE}, and
+the relative error of the estimated tensor after each iteration is added
+(see \code{\link[=cp_relative_error]{cp_relative_error()}}). This error is computed from inner products of
+the factors, so values below about \code{1e-7} are not accurate. For such small
+errors, compare the dense tensors from \code{\link[=reconstruct_cp]{reconstruct_cp()}}.
 }
 \examples{
 dims <- c(3, 4, 2)

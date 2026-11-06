@@ -1,0 +1,84 @@
+---
+title: "Algorithms, Profiles and Starts"
+vignette: >
+  %\VignetteIndexEntry{Algorithms, Profiles and Starts}
+  %\VignetteEngine{knitr::knitr}
+  %\VignetteEncoding{UTF-8}
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(collapse = TRUE, comment = "#>")
+library(SegreCP)
+```
+
+## One iteration
+
+A fit with CP rank `r` keeps `r` rank-one components. One iteration updates
+each component once, in turn, with the other components at their current
+values, so each update already uses the components updated before it in the
+same iteration.
+
+* RGD projects the gradient of the objective onto the tangent space of the
+  Segre manifold at the component and takes a step of size `step_size`.
+* RGN minimizes the objective over the tangent space at the component. In
+  decomposition this is RGD with step size 1. In regression it solves the
+  least-squares problem in the tangent coordinates.
+
+Every update is retracted to a rank-one tensor by the rank-(1, ..., 1)
+T-HOSVD, computed exactly from one 2 x 2 eigenproblem per mode.
+
+## Two profiles
+
+`segre_control()` has two profiles. The `"manuscript"` profile (the default)
+runs the algorithms analyzed in the paper: the components are updated in the
+order 1, ..., r, RGD uses a fixed step, and all `max_iter` iterations are run.
+The default step sizes, 0.5 for decomposition and \(\sigma_X^{-2}\)
+(`1 / design_variance`) for regression, are those covered by the convergence
+results of the paper.
+
+```{r}
+segre_control(max_iter = 20)
+```
+
+The `"practical"` profile updates the components in decreasing order of their
+weights, stops when the relative decrease of the objective is at most
+`1e-6`, and uses backtracking for regression RGD. Each option can also be set
+directly.
+
+```{r}
+segre_control(profile = "practical", max_iter = 200)
+```
+
+## Starts
+
+CPCA and HOSVD are spectral starts. For an orthogonal CP tensor both recover
+the components.
+
+```{r}
+dims <- c(3, 4, 5)
+factors <- lapply(dims, function(p) diag(p)[, 1:2, drop = FALSE])
+truth <- cp_components(c(3, 1.5), factors)
+x <- reconstruct_cp(truth)
+
+init_cpca <- cp_initialize(x, rank = 2, method = "cpca", split = 1)
+init_hosvd <- cp_initialize(x, rank = 2, method = "hosvd")
+
+cp_relative_error(init_cpca$comps, truth)
+cp_relative_error(init_hosvd$comps, truth)
+```
+
+A start can also be a list of components, or a function of the tensor and
+the rank that returns one. Further arguments of the function are passed in
+`init_args`.
+
+```{r}
+perturbed_start <- function(x, rank, scale) {
+  cp_components(scale * c(3, 1.5), factors)
+}
+fit <- segre_decompose(
+  x, rank = 2, method = "rgn",
+  init = perturbed_start, init_args = list(scale = 0.9),
+  control = segre_control(max_iter = 2)
+)
+fit
+```

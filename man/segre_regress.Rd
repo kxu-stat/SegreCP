@@ -3,7 +3,7 @@
 \name{segre_regress}
 \alias{segre_regress}
 \alias{cp_regression}
-\title{Fit CP tensor regression with RGD or RGN}
+\title{Tensor regression with a low-CP-rank coefficient by RGD or RGN}
 \usage{
 segre_regress(
   X,
@@ -38,74 +38,115 @@ cp_regression(
 )
 }
 \arguments{
-\item{X}{Tensor covariates. The efficient format is an \code{n} by \code{p_in} matrix.
-Also accepted: an array with dimensions \code{c(n, input_dims)}, an
-\code{rTensor::Tensor} with those dimensions, or a length-\code{n} list of tensors.}
+\item{X}{Design. The most efficient format is an \code{n} by \code{prod(input_dims)}
+matrix whose row \code{m} is \code{as.vector(X_m)}. Also accepted: an array with
+dimensions \code{c(n, input_dims)}, an \code{rTensor::Tensor} with these dimensions,
+or a list of \code{n} arrays.}
 
-\item{Y}{A length-\code{n} vector for scalar response; an \code{n} by \code{q} matrix; an
-array with dimensions \code{c(n, output_dims)}; an \code{rTensor::Tensor}; or a list
-of response tensors.}
+\item{Y}{Response: a numeric vector of length \code{n} (scalar response), an \code{n}
+by \code{prod(output_dims)} matrix, an array with dimensions
+\code{c(n, output_dims)}, an \code{rTensor::Tensor}, or a list of \code{n} arrays.}
 
-\item{rank}{Positive target CP rank.}
+\item{rank}{CP rank of the coefficient.}
 
-\item{input_dims}{Input tensor mode dimensions. Required when a matrix \code{X}
-should represent more than one input mode.}
+\item{input_dims}{Dimensions of \code{X_m}. Needed only when \code{X} is a matrix and
+\code{X_m} has more than one mode.}
 
-\item{output_dims}{Output tensor mode dimensions. For a matrix \code{Y}, omission
-treats its columns as one output mode. A vector \code{Y} is scalar.}
+\item{output_dims}{Dimensions of \code{Y_m}. Needed only when \code{Y} is a matrix
+and \code{Y_m} has more than one mode.}
 
 \item{method}{\code{"rgd"} or \code{"rgn"}.}
 
-\item{init}{Initialization accepted by \code{\link[=cp_initialize]{cp_initialize()}}. CPCA and HOSVD are
-both applied to the normalized adjoint moment in public input-output order.}
+\item{init}{Start: \code{"cpca"}, \code{"hosvd"} or \code{"random"} (see
+\code{\link[=cp_initialize]{cp_initialize()}}), a function called as \code{init(moment, rank, ...)}, or a
+list of CP components of the coefficient (see \code{\link[=cp_components]{cp_components()}}).}
 
-\item{init_split}{Optional CPCA mode split in public coefficient-mode order.}
+\item{init_split}{For \code{init = "cpca"}, the coefficient modes that index the
+rows of the unfolding (input modes are numbered first). By default the
+split that makes the unfolding closest to square.}
 
-\item{init_args}{Named list passed to \code{\link[=cp_initialize]{cp_initialize()}}.}
+\item{init_args}{A named list of further arguments for \code{\link[=cp_initialize]{cp_initialize()}} or
+for the function \code{init}.}
 
-\item{seed}{Optional local seed for random initialization.}
+\item{seed}{Seed for \code{init = "random"}. The random number stream of the
+session is left unchanged.}
 
-\item{design_variance}{Positive design-entry variance \eqn{\sigma_X^2}. It
-scales the initialization moment: with \code{normalize_regression = "sqrt_n"},
-the moment is \code{crossprod(X, Y) / (n * design_variance)} on the original data
-scale. The default RGD step is \code{1 / design_variance}.}
+\item{design_variance}{Variance \eqn{\sigma_X^2} of the design entries. It
+scales the start and sets the default RGD step \eqn{1/\sigma_X^2}.}
 
-\item{control}{Controls from \code{\link[=segre_control]{segre_control()}}.}
+\item{control}{Options from \code{\link[=segre_control]{segre_control()}}.}
 
-\item{keep_history}{If \code{TRUE}, retain the public-order CP components at
-initialization and after every completed sweep. This is intended for
-convergence diagnostics and simulation reproducibility.}
+\item{keep_history}{If \code{TRUE}, the components after every iteration are
+kept in \code{component_history}, for example to compute estimation errors with
+\code{\link[=convergence_data]{convergence_data()}}.}
 }
 \value{
-A \code{segre_cp_regression} fit. \code{components} and \code{\link[=coef]{coef()}} use input modes
-followed by output modes.
+An object of class \code{c("segre_cp_regression", "segre_cp_fit")}: a
+list with elements including
+\itemize{
+\item \code{components}: the CP components of the estimated coefficient, a list of
+\code{list(lambda, U)} with positive weights \code{lambda} and unit factors \code{U}
+(input modes first, then output modes);
+\item \code{objective}: the objective at the start and after each iteration;
+\item \code{iterations}, \code{converged}, \code{stopping_reason}: the number of iterations
+run and why the fit stopped;
+\item \code{component_history}: if \code{keep_history = TRUE}, the components at the
+start and after each iteration;
+\item \code{accepted_steps}: the RGD step of each component update (\code{NA} for RGN);
+\item \code{normal_condition}: an estimate of the condition number of each RGN
+normal equation (\code{NA} for RGD);
+\item \code{fitted_values}, \code{residual_values}: \code{n} by \code{prod(output_dims)}
+matrices on the scale of the data;
+\item \code{initialization}, \code{control}, \code{call}: the start and the options used.
+}
+
+\code{\link[=coef]{coef()}}, \code{\link[=predict]{predict()}}, \code{\link[=fitted]{fitted()}}, \code{\link[=residuals]{residuals()}}, \code{\link[=summary]{summary()}} and
+\code{\link[=convergence_data]{convergence_data()}} apply to the result. \code{cp_regression()} is an alias
+of \code{segre_regress()}.
 }
 \description{
-Fits scalar-on-tensor or tensor-on-tensor least squares with a CP-structured
-coefficient. Public coefficient modes always follow the manuscript order:
-\strong{input modes first, output modes second}. Internally the implementation
-applies a fixed output-first permutation to exploit the exact separated
-tangent design; the returned factors are permuted back.
+Fits scalar-on-tensor or tensor-on-tensor regression
+\deqn{Y_m = \langle X_m, B \rangle + E_m, \qquad m = 1, \ldots, n,}{Y_m = <X_m, B> + E_m, m = 1, ..., n,}
+where \eqn{X_m} has dimensions \code{input_dims}, the response \eqn{Y_m} is a
+scalar or has dimensions \code{output_dims}, the coefficient \eqn{B} has
+dimensions \code{c(input_dims, output_dims)} and CP rank \code{rank}, and
+\eqn{\langle X_m, B \rangle}{<X_m, B>} contracts the input modes. The fit
+minimizes
+\eqn{\frac{1}{2n} \sum_m \|Y_m - \langle X_m, B \rangle\|_F^2}{(1/(2n)) sum_m ||Y_m - <X_m, B>||_F^2}
+(or the same sum without the factor \eqn{1/n} if
+\code{normalize_regression = "none"} in \code{\link[=segre_control]{segre_control()}}) by Riemannian
+gradient descent (RGD) or Riemannian Gauss--Newton (RGN) over the rank-one
+components of \eqn{B}. One iteration updates each component once, in turn,
+with the others at their current values. RGN solves the least-squares
+problem restricted to the tangent space at the component. Every update is
+retracted to a rank-one tensor by the rank-(1, ..., 1) T-HOSVD.
 }
 \details{
-\code{profile = "manuscript"} (the default in \code{\link[=segre_control]{segre_control()}}) uses normalized
-observations, fixed component order, the fixed RGD step
-\eqn{\alpha = \sigma_X^{-2}} unless \code{step_size} is given, exact T-HOSVD, no
-early stopping, and unregularized RGN. The practical profile records every
-deviation explicitly in the fit object.
+The CPCA and HOSVD starts are computed from the moment
+\eqn{\frac{1}{n \sigma_X^2} \sum_m X_m \otimes Y_m}{sum_m (X_m o Y_m) / (n sigma_X^2)}
+(without the factor \eqn{1/n} if \code{normalize_regression = "none"}), which
+estimates \eqn{B} when the design entries are uncorrelated with variance
+\eqn{\sigma_X^2} (\code{design_variance}).
 }
 \examples{
+# Scalar response, 3 x 4 matrix covariates, rank-one coefficient
 set.seed(2)
 n <- 80
-input_dims <- c(3, 4)
-X <- matrix(rnorm(n * prod(input_dims)), n)
-u1 <- c(1, 0, 0)
-u2 <- c(1, 0, 0, 0)
-beta <- 2 * kronecker(u2, u1)
-y <- as.numeric(X \%*\% beta + rnorm(n, sd = 0.05))
-fit <- segre_regress(
-  X, y, rank = 1, input_dims = input_dims, method = "rgn",
-  init = "hosvd", control = segre_control(max_iter = 3)
-)
-predict(fit, X[1:3, , drop = FALSE])
+X <- matrix(rnorm(n * 12), n)
+beta <- 2 * outer(c(1, 0, 0), c(0, 1, 0, 0))
+y <- as.numeric(X \%*\% as.vector(beta)) + rnorm(n, sd = 0.05)
+fit <- segre_regress(X, y, rank = 1, input_dims = c(3, 4), method = "rgn",
+                     control = segre_control(max_iter = 5))
+fit
+predict(fit, X[1:3, ])
+
+# Matrix response: one output mode of dimension 2
+Y <- cbind(y, -y) + rnorm(2 * n, sd = 0.05)
+fit2 <- segre_regress(X, Y, rank = 1, input_dims = c(3, 4),
+                      control = segre_control(max_iter = 5))
+dim(coef(fit2))
+}
+\seealso{
+\code{\link[=segre_decompose]{segre_decompose()}} for CP decomposition and \code{\link[=segre_control]{segre_control()}} for
+the options.
 }

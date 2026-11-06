@@ -29,15 +29,17 @@
 
 .auto_cpca_split <- function(dims) {
   d <- length(dims)
-  if (d < 2L) stop("CPCA requires a tensor with at least two modes.")
+  if (d < 2L) {
+    stop("CPCA requires a tensor with at least two modes.", call. = FALSE)
+  }
   if (d > 20L) {
     stop("Automatic CPCA split enumeration is limited to 20 modes; supply `split`.",
          call. = FALSE)
   }
-  # Algorithm CPCA in the manuscript minimizes the *raw product-scale*
-  # imbalance |prod(p[S]) - sqrt(prod(p))|.  This is deliberately not replaced
-  # by a log-scale imbalance, because the two order candidate subsets
-  # differently when mode dimensions are unequal.
+  # The criterion of the CPCA algorithm in the paper, |prod(p[S]) -
+  # sqrt(prod(p))|, on the original scale. (On the log scale, a different
+  # subset can be chosen when the dimensions differ.) Ties go to the first
+  # subset in the order of utils::combn().
   target <- sqrt(prod(as.numeric(dims)))
   candidates <- unlist(lapply(seq_len(d - 1L), function(k) {
     z <- utils::combn(seq_len(d), k, simplify = FALSE)
@@ -150,34 +152,50 @@
   list(comps = .validate_components(comps, dims, rank))
 }
 
-#' Initialize a CP tensor
+#' Initial CP components
 #'
-#' The CPCA implementation follows the manuscript algorithm: it uses a
-#' non-empty proper mode split and, when the split is omitted, minimizes
-#' `abs(prod(dims[split]) - sqrt(prod(dims)))`. It deterministically resolves
-#' ties, aligns the two refolded singular-vector sides, re-estimates each
-#' component weight by projection, and absorbs a negative weight into the first
-#' factor. The HOSVD initializer uses the diagonal of a multilinear HOSVD core;
-#' it is an initializer, not a general CP decomposition algorithm.
+#' Computes `rank` rank-one components from a tensor, as a start for
+#' [segre_decompose()] (the observed tensor) or [segre_regress()] (the moment
+#' of the design and the response).
 #'
-#' @param x A numeric array/matrix or `rTensor::Tensor` to initialize.
-#' @param rank Positive target CP rank.
-#' @param method One of `"cpca"`, `"hosvd"`, or `"random"`. A function or an
-#'   already constructed component list is also accepted. A function is called
-#'   as `method(x, rank, ...)` and must return components or
-#'   `list(comps = components)`.
-#' @param split Optional CPCA mode subset, using one-based R indices.
-#' @param seed Optional local seed for random initialization. The caller's RNG
-#'   state is restored.
-#' @param project_random_weights If `TRUE`, estimate random-initialization
-#'   weights by projection onto `x`; otherwise use unit weights.
-#' @param ... Additional arguments passed to a custom initialization function.
-#' @return A list with `comps`, `method`, and method-specific details.
+#' * `"cpca"`, composite PCA: the tensor is unfolded into a matrix whose rows
+#'   are indexed by the modes in `split`. Each of the `rank` leading pairs of
+#'   singular vectors is refolded into two tensors, and each of these is
+#'   replaced by the rank-one tensor formed from the leading left singular
+#'   vectors of its unfoldings. By default `split` is the set of modes whose
+#'   dimensions have the product closest to `sqrt(prod(dim(x)))`.
+#' * `"hosvd"`: the factors of component `i` are the `i`-th leading left
+#'   singular vectors of the mode unfoldings of `x`.
+#' * `"random"`: factors with independent standard normal entries, scaled to
+#'   unit length.
+#'
+#' The weight of each component is the inner product of `x` with the rank-one
+#' tensor of its unit factors (or 1 for random factors with
+#' `project_random_weights = FALSE`). A negative weight is made positive by
+#' changing the sign of the first factor.
+#'
+#' @param x A numeric array or an `rTensor::Tensor`.
+#' @param rank Number of components.
+#' @param method `"cpca"`, `"hosvd"` or `"random"`; or a function called as
+#'   `method(x, rank, ...)` that returns a component list; or a component list
+#'   (see [cp_components()]), which is checked and returned.
+#' @param split For `"cpca"`, the modes that index the rows of the unfolding,
+#'   a non-empty proper subset of `seq_along(dim(x))`.
+#' @param seed Seed for `"random"`. The random number stream of the session
+#'   is left unchanged.
+#' @param project_random_weights For `"random"`, whether the weights are
+#'   computed from `x` (`TRUE`) or set to 1.
+#' @param ... Further arguments for a function `method`.
+#' @return A list with `comps`, the list of components `list(lambda, U)` with
+#'   unit factors, and `method`. For `"cpca"` also `split` and the leading
+#'   `singular_values` of the unfolding.
 #' @examples
 #' set.seed(1)
 #' x <- array(rnorm(4 * 5 * 6), c(4, 5, 6))
-#' init_cpca <- cp_initialize(x, rank = 2, method = "cpca")
-#' init_hosvd <- cp_initialize(x, rank = 2, method = "hosvd")
+#' init <- cp_initialize(x, rank = 2, method = "cpca")
+#' init$split
+#' vapply(init$comps, `[[`, numeric(1), "lambda")
+#' cp_initialize(x, rank = 2, method = "random", seed = 1)$comps[[1]]$lambda
 #' @export
 cp_initialize <- function(x, rank, method = c("cpca", "hosvd", "random"),
                           split = NULL, seed = NULL,
@@ -206,6 +224,19 @@ cp_initialize <- function(x, rank, method = c("cpca", "hosvd", "random"),
   ans
 }
 
+# Start of a fit from a supplied component list.
+.component_start <- function(init, dims, rank, init_args) {
+  if (!is.list(init_args)) stop("`init_args` must be a list.", call. = FALSE)
+  if (length(init_args)) {
+    stop("`init_args` is used only when `init` is a method name or a ",
+         "function.", call. = FALSE)
+  }
+  list(comps = .validate_components(init, dims, rank),
+       method = "custom_components")
+}
+
+# Start of a fit from a method name or a function, computed from `moment`
+# (the observed tensor, or the moment of the design and the response).
 .resolve_initialization <- function(moment, rank, init, split = NULL,
                                     seed = NULL, init_args = list()) {
   if (!is.list(init_args)) stop("`init_args` must be a list.", call. = FALSE)

@@ -10,20 +10,22 @@ vignette: >
 knitr::opts_chunk$set(collapse = TRUE, comment = "#>")
 ```
 
-`SegreCP` fits CP-rank-constrained tensors using Riemannian gradient descent
-(`"rgd"`) or Riemannian Gauss--Newton (`"rgn"`). The same two methods support
-tensor decomposition, scalar-on-tensor regression, and tensor-on-tensor
-regression. CPCA (`"cpca"`) and HOSVD (`"hosvd"`) are the two spectral starts;
-random and user-supplied starts are available as well.
+`SegreCP` estimates tensors of low CP rank with Riemannian gradient descent
+(`"rgd"`) or Riemannian Gauss--Newton (`"rgn"`) on the Segre manifold of
+rank-one tensors. Both methods are available for tensor decomposition,
+scalar-on-tensor regression and tensor-on-tensor regression. The starts are
+CPCA (`"cpca"`, the default), HOSVD (`"hosvd"`), random factors (`"random"`),
+or components supplied by the user.
 
-The examples below are small and self-contained. They illustrate the public
-API, not the paper's full simulation or real-data protocol. Those larger
-experiments have separate reproduction instructions linked at the end.
+The examples below are small. The code for the experiments of the paper is
+in the `reproducibility/` directory of the GitHub repository.
 
 ## CP tensor decomposition and convergence
 
-The observed tensor is a noisy rank-one signal. Its dimensions determine the
-dimensions of each recovered component.
+A CP tensor is stored as a list of components `list(lambda, U)`, with a
+weight `lambda` and one unit factor per mode in `U`. `cp_components()` builds
+this list from factor matrices and `reconstruct_cp()` forms the dense tensor.
+The observed tensor below is a rank-one tensor plus noise.
 
 ```{r decomposition}
 library(SegreCP)
@@ -52,18 +54,16 @@ dim(reconstruct_cp(fit_rgn))
 cp_relative_error(fit_rgn, truth_components)
 ```
 
-`convergence_data()` reports the observed least-squares objective at
-initialization and after each completed sweep. With a known simulated truth,
-it also reports reconstruction error; that oracle error is unavailable on
-ordinary data and need not decrease at every sweep.
+`convergence_data()` returns the objective at the start and after each
+iteration. For simulated data with known components it also returns the
+relative error of the estimate, which requires `keep_history = TRUE`.
 
 ```{r convergence, fig.width=6.6, fig.height=4.1, fig.cap="Observed objective relative to initialization for the two methods."}
 rgd_path <- convergence_data(fit_rgd, truth_components)
 rgn_path <- convergence_data(fit_rgn, truth_components)
-stopifnot(all(rgd_path$objective_ratio > 0),
-          all(rgn_path$objective_ratio > 0))
+rgn_path
 plot(rgd_path$iteration, rgd_path$objective_ratio, type = "b", log = "y",
-     pch = 16, col = "#D55E00", xlab = "Completed sweep",
+     pch = 16, col = "#D55E00", xlab = "Iteration",
      ylab = "Observed objective / initial objective")
 lines(rgn_path$iteration, rgn_path$objective_ratio, type = "b",
       pch = 17, col = "#0072B2")
@@ -72,18 +72,21 @@ legend("topright", c("RGD (CPCA)", "RGN (HOSVD)"),
        lty = 1, bty = "n")
 ```
 
-An `rTensor::Tensor` can replace the base array at the same API boundary:
+An `rTensor::Tensor` can be used in place of an array:
 
 ```{r rtensor}
-tensor_input <- rTensor::as.tensor(observed)
-stopifnot(identical(dim(as_segre_array(tensor_input)), dims))
+fit_tensor_input <- segre_decompose(
+  rTensor::as.tensor(observed), rank = 1L, method = "rgn", init = "hosvd",
+  control = segre_control(max_iter = 6L)
+)
+all.equal(coef(fit_tensor_input), coef(fit_rgn))
 ```
 
 ## Scalar-on-tensor regression
 
-For regression, rows are observations. A matrix with one vectorized
-predictor tensor per row is the most direct representation; an array of
-dimensions `c(n, input_dims)` is also accepted.
+In regression, the design is a matrix with one row `as.vector(X_m)` per
+observation; an array with dimensions `c(n, input_dims)` is also accepted
+(see `vignette("regression-data-layout")`).
 
 ```{r scalar-regression}
 set.seed(12)
@@ -104,8 +107,8 @@ head(predict(fit_scalar, X), 3L)
 
 ## Tensor-on-tensor regression
 
-The coefficient tensor uses input modes first, then output modes. In this
-example the response has two `2`-dimensional modes.
+The coefficient has the input modes first, then the output modes. In this
+example each response is a 2 x 2 matrix.
 
 ```{r tensor-regression}
 set.seed(13)
@@ -129,8 +132,6 @@ dim(coef(fit_tensor))
 dim(predict(fit_tensor, X[1:3, , drop = FALSE]))
 ```
 
-See `?segre_decompose`, `?segre_regress`, `?cp_initialize`, and
-`?segre_control` for inputs, outputs, and numerical controls. The code that
-reproduces the simulations and the trade-data analysis of the paper is in the
-`reproducibility/` directory of the GitHub repository; the trade data are not
-distributed with the package.
+See `?segre_decompose`, `?segre_regress`, `?cp_initialize` and
+`?segre_control` for all options, and `vignette("algorithms")` for the
+profiles and starts.

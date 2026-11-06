@@ -1,15 +1,15 @@
-fast_gs_state <- function(observed, components) {
+sweep_state <- function(observed, components) {
   caches <- lapply(components, function(z)
     SegreCP:::.rank1_vector(z$lambda, z$U))
   list(components = components, caches = caches,
     residual = array(Reduce(`+`, caches) - as.numeric(observed), dim(observed)))
 }
 
-fast_gs_reference <- function(state, order_i, alpha) {
+sweep_reference <- function(state, order_i, alpha) {
   components <- state$components
   for (i in order_i) {
     proposal <- SegreCP:::rgd_step_fused_cpp(state$residual,
-      components[[i]]$U, components[[i]]$lambda, alpha, 0L)
+      components[[i]]$U, components[[i]]$lambda, alpha)
     next_component <- SegreCP:::.canonicalize_component(
       list(lambda = proposal$lambda, U = proposal$U))
     SegreCP:::update_rank1_cache_inplace_cpp(state$residual,
@@ -21,11 +21,11 @@ fast_gs_reference <- function(state, order_i, alpha) {
   state
 }
 
-fast_gs_component_arrays <- function(components) {
+sweep_component_arrays <- function(components) {
   lapply(components, function(z) rank1_array(z$lambda, z$U))
 }
 
-test_that("batched contractions preserve sequential GS trajectories", {
+test_that("the compiled sweep equals one-at-a-time updates", {
   set.seed(431)
   cases <- list(
     list(dims = c(4L, 5L), rank = 2L),
@@ -42,20 +42,20 @@ test_that("batched contractions preserve sequential GS trajectories", {
     observed <- reconstruct_cp(components) + array(rnorm(prod(dims), sd = 0.12), dims)
     original_components <- serialize(components, NULL)
     for (alpha in c(0.1, 0.5, 1)) {
-      reference <- fast_gs_state(observed, components)
-      candidate <- fast_gs_state(observed, components)
+      reference <- sweep_state(observed, components)
+      candidate <- sweep_state(observed, components)
       for (iteration in 1:5) {
         order_i <- if (iteration %% 2L) rev(seq_len(rank)) else
           order(vapply(reference$components, `[[`, numeric(1), "lambda"),
                 decreasing = TRUE)
-        reference <- fast_gs_reference(reference, order_i, alpha)
+        reference <- sweep_reference(reference, order_i, alpha)
         before <- serialize(candidate$components, NULL)
         result <- SegreCP:::rgd_sweep_gs_batch_cpp(candidate$residual,
           candidate$caches, candidate$components, as.integer(order_i), alpha)
         expect_identical(serialize(candidate$components, NULL), before)
         candidate$components <- result$components
-        expect_equal(fast_gs_component_arrays(candidate$components),
-          fast_gs_component_arrays(reference$components), tolerance = 3e-11)
+        expect_equal(sweep_component_arrays(candidate$components),
+          sweep_component_arrays(reference$components), tolerance = 3e-11)
         expect_equal(candidate$residual, reference$residual, tolerance = 3e-11)
         expect_equal(result$objective, reference$objective, tolerance = 3e-12)
         expect_equal(result$objective,
@@ -73,34 +73,34 @@ test_that("batched contractions preserve sequential GS trajectories", {
   }
 })
 
-test_that("GS contraction corrections handle zero cross-mode inner products", {
+test_that("the sweep corrections allow zero inner products of factors", {
   set.seed(432)
   truth <- orthogonal_cp_tensor(c(4L, 5L, 3L, 4L), c(2, 1.5, 1))
   components <- truth$components
   components[[2L]]$U[[1L]] <- -components[[2L]]$U[[1L]]
   observed <- truth$array + array(rnorm(length(truth$array), sd = 0.03), dim(truth$array))
   for (alpha in c(0.5, 1)) {
-    reference <- fast_gs_reference(fast_gs_state(observed, components), c(3L, 1L, 2L), alpha)
-    candidate <- fast_gs_state(observed, components)
+    reference <- sweep_reference(sweep_state(observed, components), c(3L, 1L, 2L), alpha)
+    candidate <- sweep_state(observed, components)
     result <- SegreCP:::rgd_sweep_gs_batch_cpp(candidate$residual,
       candidate$caches, components, c(3L, 1L, 2L), alpha)
     expect_false(result$sequential_fallback)
-    expect_equal(fast_gs_component_arrays(result$components),
-      fast_gs_component_arrays(reference$components), tolerance = 3e-12)
+    expect_equal(sweep_component_arrays(result$components),
+      sweep_component_arrays(reference$components), tolerance = 3e-12)
     expect_equal(candidate$residual, reference$residual, tolerance = 3e-12)
     expect_true(all(vapply(result$components, function(z) z$lambda > 0, logical(1))))
   }
 })
 
-test_that("tiny residuals use all original sequential updates without stopping", {
+test_that("near-zero residuals switch to one-at-a-time updates", {
   set.seed(433)
   dims <- c(5L, 4L, 3L, 4L)
   components <- lapply(c(3, 2, 1), function(weight)
     list(lambda = weight, U = lapply(dims, unit_vector)))
   observed <- reconstruct_cp(components) + array(rnorm(prod(dims), sd = 1e-13), dims)
   for (alpha in c(0.5, 1)) {
-    reference <- fast_gs_reference(fast_gs_state(observed, components), c(2L, 3L, 1L), alpha)
-    candidate <- fast_gs_state(observed, components)
+    reference <- sweep_reference(sweep_state(observed, components), c(2L, 3L, 1L), alpha)
+    candidate <- sweep_state(observed, components)
     before <- serialize(components, NULL)
     result <- SegreCP:::rgd_sweep_gs_batch_cpp(candidate$residual,
       candidate$caches, components, c(2L, 3L, 1L), alpha)
@@ -113,9 +113,9 @@ test_that("tiny residuals use all original sequential updates without stopping",
   }
 })
 
-test_that("batched GS validates the fixed component permutation", {
+test_that("the sweep checks the update order and the step", {
   truth <- orthogonal_cp_tensor(c(3L, 4L, 3L), c(2, 1))
-  state <- fast_gs_state(truth$array + 0.01, truth$components)
+  state <- sweep_state(truth$array + 0.01, truth$components)
   expect_error(SegreCP:::rgd_sweep_gs_batch_cpp(state$residual,
     state$caches, state$components, c(1L, 1L), 0.5), "permutation")
   expect_error(SegreCP:::rgd_sweep_gs_batch_cpp(state$residual,
@@ -124,7 +124,7 @@ test_that("batched GS validates the fixed component permutation", {
     state$caches, state$components, c(NA_integer_, 1L), 0.5), "permutation")
 })
 
-test_that("fused initial state preserves generic rank-one multiplication order", {
+test_that("the initial state multiplies factors in the order of make_rank1_vec_cpp", {
   set.seed(434)
   cases <- list(
     list(dims = c(3L, 4L), rank = 1L),
@@ -143,7 +143,7 @@ test_that("fused initial state preserves generic rank-one multiplication order",
     for (sigma in c(0, 1e-13, 0.2)) {
       observed <- clean + sigma * noise
       original <- serialize(list(observed, components), NULL)
-      expected <- fast_gs_state(observed, components)
+      expected <- sweep_state(observed, components)
       fused <- SegreCP:::initialize_decomposition_state_cpp(observed, components)
       expect_identical(fused$caches, expected$caches)
       expect_identical(fused$residual, expected$residual)
@@ -156,7 +156,7 @@ test_that("fused initial state preserves generic rank-one multiplication order",
   }
 })
 
-test_that("previous objectives preserve generic GS sweeps and early fallback", {
+test_that("a supplied previous objective gives the same sweep", {
   set.seed(435)
   cases <- list(
     list(dims = c(3L, 4L), rank = 1L),
@@ -174,15 +174,15 @@ test_that("previous objectives preserve generic GS sweeps and early fallback", {
     noise <- array(rnorm(prod(dims)), dims)
     for (sigma in c(0, 1e-13, 0.2)) for (alpha in c(0.2, 0.5, 1)) {
       observed <- clean + sigma * noise
-      reference <- fast_gs_state(observed, components)
-      scanned <- fast_gs_state(observed, components)
+      reference <- sweep_state(observed, components)
+      scanned <- sweep_state(observed, components)
       supplied <- SegreCP:::initialize_decomposition_state_cpp(observed, components)
       supplied$components <- components
       for (iteration in 1:3) {
         order_i <- as.integer(if (iteration %% 2L) rev(seq_len(rank)) else
           order(vapply(reference$components, `[[`, numeric(1), "lambda"),
                 decreasing = TRUE))
-        reference <- fast_gs_reference(reference, order_i, alpha)
+        reference <- sweep_reference(reference, order_i, alpha)
         original <- serialize(supplied$components, NULL)
         a <- SegreCP:::rgd_sweep_gs_batch_cpp(scanned$residual,
           scanned$caches, scanned$components, order_i, alpha)
@@ -194,8 +194,8 @@ test_that("previous objectives preserve generic GS sweeps and early fallback", {
         expect_equal(scanned$residual, supplied$residual, tolerance = 0)
         expect_equal(scanned$caches, supplied$caches, tolerance = 0)
         expect_identical(a$sequential_fallback, b$sequential_fallback)
-        expect_equal(fast_gs_component_arrays(b$components),
-          fast_gs_component_arrays(reference$components), tolerance = 3e-11)
+        expect_equal(sweep_component_arrays(b$components),
+          sweep_component_arrays(reference$components), tolerance = 3e-11)
         expect_equal(supplied$residual, reference$residual, tolerance = 3e-11)
         expect_equal(b$objective,
           0.5 * sum(supplied$residual * supplied$residual), tolerance = 3e-14)
@@ -211,9 +211,9 @@ test_that("previous objectives preserve generic GS sweeps and early fallback", {
   }
 })
 
-test_that("previous objective and fused initializer validate their inputs", {
+test_that("the sweep and the initial state check their inputs", {
   truth <- orthogonal_cp_tensor(c(3L, 4L, 3L), c(2, 1))
-  state <- fast_gs_state(truth$array + 0.01, truth$components)
+  state <- sweep_state(truth$array + 0.01, truth$components)
   for (previous in list(-1, c(0, 1), NA_real_, Inf))
     expect_error(SegreCP:::rgd_sweep_gs_batch_cpp(state$residual,
       state$caches, state$components, c(2L, 1L), 0.5, previous),
@@ -228,13 +228,13 @@ test_that("previous objective and fused initializer validate their inputs", {
     "positive finite")
 })
 
-test_that("stored objective rounding cannot change the fallback at its boundary", {
+test_that("rounding of the stored objective does not change the switch", {
   truth <- orthogonal_cp_tensor(c(3L, 4L, 3L), c(2, 1))
   boundary <- 64 * sqrt(.Machine$double.eps) * 3
   for (offset in c(-4, 0, 4) * .Machine$double.eps) {
     for (rounding in c(-4, 0, 4) * .Machine$double.eps) {
-      direct <- fast_gs_state(truth$array, truth$components)
-      supplied <- fast_gs_state(truth$array, truth$components)
+      direct <- sweep_state(truth$array, truth$components)
+      supplied <- sweep_state(truth$array, truth$components)
       direct$residual <- array(0, dim(truth$array))
       supplied$residual <- array(0, dim(truth$array))
       direct$residual[[1L]] <- boundary * (1 + offset)

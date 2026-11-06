@@ -16,7 +16,7 @@ test_that("structured T-HOSVD equals explicit unfolding SVD", {
   df <- 1L + sum(vapply(U, length, integer(1L)) - 1L)
   coords <- c(2, rnorm(df - 1L, sd = 0.15))
   proposal <- array(
-    SegreCP:::.tangent_coords_to_vector(U, coords),
+    SegreCP:::.build_tangent_basis(U) %*% coords,
     vapply(U, length, integer(1L))
   )
   structured <- SegreCP:::.retract_tangent_coordinates(U, coords)

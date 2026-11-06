@@ -11,9 +11,11 @@ knitr::opts_chunk$set(collapse = TRUE, comment = "#>")
 library(SegreCP)
 ```
 
-The fastest regression input is a dense numeric matrix with observations in
-rows. Arrays and `rTensor::Tensor` objects are accepted for compatibility and
-converted once at the API boundary.
+`segre_regress()` works with the design as a numeric matrix with one row
+`as.vector(X_m)` per observation. An array with dimensions
+`c(n, input_dims)`, an `rTensor::Tensor` and a list of arrays are converted to
+this matrix, so the three fits below are the same. With a matrix, give
+`input_dims` when `X_m` has more than one mode.
 
 ```{r}
 set.seed(14)
@@ -48,7 +50,19 @@ max(abs(coef(fit_matrix) - coef(fit_array)))
 max(abs(coef(fit_matrix) - coef(fit_tensor)))
 ```
 
-For tensor responses, the public coefficient layout is
-`c(input_dims, output_dims)`. Predictions have dimensions
-`c(n_new, output_dims)`. This order is independent of the internal permutation
-used to evaluate contractions efficiently.
+The response is handled in the same way: a vector for a scalar response, or a
+matrix with one row `as.vector(Y_m)` per observation (give `output_dims` when
+`Y_m` has more than one mode), an array with dimensions `c(n, output_dims)`, an
+`rTensor::Tensor` or a list of arrays. The coefficient has dimensions
+`c(input_dims, output_dims)`, and `predict()` returns an array with dimensions
+`c(n_new, output_dims)`.
+
+```{r}
+output_dims <- c(2, 2)
+Y <- array(rnorm(n * 4), dim = c(n, output_dims))
+fit_tensor_response <- segre_regress(
+  X_matrix, Y, rank = 1, input_dims = input_dims, control = control
+)
+dim(coef(fit_tensor_response))
+dim(predict(fit_tensor_response, X_matrix[1:3, ]))
+```

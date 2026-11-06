@@ -23,8 +23,8 @@ BEGIN_RCPP
 END_RCPP
 }
 // rgd_step_fused_cpp
-List rgd_step_fused_cpp(NumericVector Rvec, List Ulist, double lambda_i, double alpha, int n_iter);
-RcppExport SEXP _SegreCP_rgd_step_fused_cpp(SEXP RvecSEXP, SEXP UlistSEXP, SEXP lambda_iSEXP, SEXP alphaSEXP, SEXP n_iterSEXP) {
+List rgd_step_fused_cpp(NumericVector Rvec, List Ulist, double lambda_i, double alpha);
+RcppExport SEXP _SegreCP_rgd_step_fused_cpp(SEXP RvecSEXP, SEXP UlistSEXP, SEXP lambda_iSEXP, SEXP alphaSEXP) {
 BEGIN_RCPP
     Rcpp::RObject rcpp_result_gen;
     Rcpp::RNGScope rcpp_rngScope_gen;
@@ -32,8 +32,7 @@ BEGIN_RCPP
     Rcpp::traits::input_parameter< List >::type Ulist(UlistSEXP);
     Rcpp::traits::input_parameter< double >::type lambda_i(lambda_iSEXP);
     Rcpp::traits::input_parameter< double >::type alpha(alphaSEXP);
-    Rcpp::traits::input_parameter< int >::type n_iter(n_iterSEXP);
-    rcpp_result_gen = Rcpp::wrap(rgd_step_fused_cpp(Rvec, Ulist, lambda_i, alpha, n_iter));
+    rcpp_result_gen = Rcpp::wrap(rgd_step_fused_cpp(Rvec, Ulist, lambda_i, alpha));
     return rcpp_result_gen;
 END_RCPP
 }
@@ -105,7 +104,7 @@ END_RCPP
 
 static const R_CallMethodDef CallEntries[] = {
     {"_SegreCP_tangent_proj_cpp", (DL_FUNC) &_SegreCP_tangent_proj_cpp, 2},
-    {"_SegreCP_rgd_step_fused_cpp", (DL_FUNC) &_SegreCP_rgd_step_fused_cpp, 5},
+    {"_SegreCP_rgd_step_fused_cpp", (DL_FUNC) &_SegreCP_rgd_step_fused_cpp, 4},
     {"_SegreCP_make_rank1_vec_cpp", (DL_FUNC) &_SegreCP_make_rank1_vec_cpp, 2},
     {"_SegreCP_update_rank1_cache_inplace_cpp", (DL_FUNC) &_SegreCP_update_rank1_cache_inplace_cpp, 4},
     {"_SegreCP_initialize_decomposition_state_cpp", (DL_FUNC) &_SegreCP_initialize_decomposition_state_cpp, 2},

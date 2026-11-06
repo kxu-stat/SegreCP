@@ -2,22 +2,39 @@
 % Please edit documentation in R/methods.R
 \name{predict.segre_cp_regression}
 \alias{predict.segre_cp_regression}
-\title{Predict from a SegreCP regression fit}
+\alias{fitted.segre_cp_regression}
+\alias{residuals.segre_cp_regression}
+\title{Predictions, fitted values and residuals of a SegreCP regression}
 \usage{
 \method{predict}{segre_cp_regression}(object, newdata, ...)
+
+\method{fitted}{segre_cp_regression}(object, ...)
+
+\method{residuals}{segre_cp_regression}(object, ...)
 }
 \arguments{
-\item{object}{A \code{segre_cp_regression} fit.}
+\item{object}{A fit from \code{\link[=segre_regress]{segre_regress()}}.}
 
-\item{newdata}{New tensor covariates in any format accepted by
+\item{newdata}{Design for the new observations, in any format accepted by
 \code{\link[=segre_regress]{segre_regress()}}.}
 
 \item{...}{Unused.}
 }
 \value{
-A vector for scalar response, a matrix for a one-mode tensor response,
-or an array with dimensions \code{c(n, output_dims)} for multiple output modes.
+A vector for a scalar response, a matrix for a response with one
+mode, and otherwise an array with dimensions \code{c(n, output_dims)}.
+\code{fitted()} and \code{residuals()} refer to the data used for the fit, on their
+original scale.
 }
 \description{
-Predict from a SegreCP regression fit
+Predictions, fitted values and residuals of a SegreCP regression
+}
+\examples{
+set.seed(2)
+X <- matrix(rnorm(60 * 6), 60)
+y <- as.numeric(X \%*\% rep(c(1, -1), 3)) + rnorm(60, sd = 0.1)
+fit <- segre_regress(X, y, rank = 1, input_dims = c(2, 3),
+                     control = segre_control(max_iter = 5))
+predict(fit, X[1:2, ])
+head(residuals(fit))
 }

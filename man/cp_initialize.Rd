@@ -2,7 +2,7 @@
 % Please edit documentation in R/initialization.R
 \name{cp_initialize}
 \alias{cp_initialize}
-\title{Initialize a CP tensor}
+\title{Initial CP components}
 \usage{
 cp_initialize(
   x,
@@ -15,40 +15,59 @@ cp_initialize(
 )
 }
 \arguments{
-\item{x}{A numeric array/matrix or \code{rTensor::Tensor} to initialize.}
+\item{x}{A numeric array or an \code{rTensor::Tensor}.}
 
-\item{rank}{Positive target CP rank.}
+\item{rank}{Number of components.}
 
-\item{method}{One of \code{"cpca"}, \code{"hosvd"}, or \code{"random"}. A function or an
-already constructed component list is also accepted. A function is called
-as \code{method(x, rank, ...)} and must return components or
-\code{list(comps = components)}.}
+\item{method}{\code{"cpca"}, \code{"hosvd"} or \code{"random"}; or a function called as
+\code{method(x, rank, ...)} that returns a component list; or a component list
+(see \code{\link[=cp_components]{cp_components()}}), which is checked and returned.}
 
-\item{split}{Optional CPCA mode subset, using one-based R indices.}
+\item{split}{For \code{"cpca"}, the modes that index the rows of the unfolding,
+a non-empty proper subset of \code{seq_along(dim(x))}.}
 
-\item{seed}{Optional local seed for random initialization. The caller's RNG
-state is restored.}
+\item{seed}{Seed for \code{"random"}. The random number stream of the session
+is left unchanged.}
 
-\item{project_random_weights}{If \code{TRUE}, estimate random-initialization
-weights by projection onto \code{x}; otherwise use unit weights.}
+\item{project_random_weights}{For \code{"random"}, whether the weights are
+computed from \code{x} (\code{TRUE}) or set to 1.}
 
-\item{...}{Additional arguments passed to a custom initialization function.}
+\item{...}{Further arguments for a function \code{method}.}
 }
 \value{
-A list with \code{comps}, \code{method}, and method-specific details.
+A list with \code{comps}, the list of components \code{list(lambda, U)} with
+unit factors, and \code{method}. For \code{"cpca"} also \code{split} and the leading
+\code{singular_values} of the unfolding.
 }
 \description{
-The CPCA implementation follows the manuscript algorithm: it uses a
-non-empty proper mode split and, when the split is omitted, minimizes
-\code{abs(prod(dims[split]) - sqrt(prod(dims)))}. It deterministically resolves
-ties, aligns the two refolded singular-vector sides, re-estimates each
-component weight by projection, and absorbs a negative weight into the first
-factor. The HOSVD initializer uses the diagonal of a multilinear HOSVD core;
-it is an initializer, not a general CP decomposition algorithm.
+Computes \code{rank} rank-one components from a tensor, as a start for
+\code{\link[=segre_decompose]{segre_decompose()}} (the observed tensor) or \code{\link[=segre_regress]{segre_regress()}} (the moment
+of the design and the response).
+}
+\details{
+\itemize{
+\item \code{"cpca"}, composite PCA: the tensor is unfolded into a matrix whose rows
+are indexed by the modes in \code{split}. Each of the \code{rank} leading pairs of
+singular vectors is refolded into two tensors, and each of these is
+replaced by the rank-one tensor formed from the leading left singular
+vectors of its unfoldings. By default \code{split} is the set of modes whose
+dimensions have the product closest to \code{sqrt(prod(dim(x)))}.
+\item \code{"hosvd"}: the factors of component \code{i} are the \code{i}-th leading left
+singular vectors of the mode unfoldings of \code{x}.
+\item \code{"random"}: factors with independent standard normal entries, scaled to
+unit length.
+}
+
+The weight of each component is the inner product of \code{x} with the rank-one
+tensor of its unit factors (or 1 for random factors with
+\code{project_random_weights = FALSE}). A negative weight is made positive by
+changing the sign of the first factor.
 }
 \examples{
 set.seed(1)
 x <- array(rnorm(4 * 5 * 6), c(4, 5, 6))
-init_cpca <- cp_initialize(x, rank = 2, method = "cpca")
-init_hosvd <- cp_initialize(x, rank = 2, method = "hosvd")
+init <- cp_initialize(x, rank = 2, method = "cpca")
+init$split
+vapply(init$comps, `[[`, numeric(1), "lambda")
+cp_initialize(x, rank = 2, method = "random", seed = 1)$comps[[1]]$lambda
 }

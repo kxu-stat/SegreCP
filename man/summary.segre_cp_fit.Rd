@@ -2,18 +2,33 @@
 % Please edit documentation in R/methods.R
 \name{summary.segre_cp_fit}
 \alias{summary.segre_cp_fit}
+\alias{print.summary.segre_cp_fit}
 \title{Summarize a SegreCP fit}
 \usage{
 \method{summary}{segre_cp_fit}(object, ...)
+
+\method{print}{summary.segre_cp_fit}(x, ...)
 }
 \arguments{
-\item{object}{A fitted object from \code{\link[=segre_decompose]{segre_decompose()}} or \code{\link[=segre_regress]{segre_regress()}}.}
+\item{object}{A fit from \code{\link[=segre_decompose]{segre_decompose()}} or \code{\link[=segre_regress]{segre_regress()}}.}
 
 \item{...}{Unused.}
+
+\item{x}{An object returned by \code{summary()}.}
 }
 \value{
-A \code{summary.segre_cp_fit} list.
+\code{summary()} returns a list of class \code{summary.segre_cp_fit} with the
+task, method, profile, rank, dimensions, component weights, number of
+iterations, stopping reason, the objective at the start and at the end and
+their ratio, and for regression RGN the range of the estimated condition
+numbers of the normal equations. Its \code{print()} method returns \code{x}
+invisibly.
 }
 \description{
 Summarize a SegreCP fit
+}
+\examples{
+set.seed(1)
+x <- array(rnorm(60), c(5, 4, 3))
+summary(segre_decompose(x, rank = 1, control = segre_control(max_iter = 5)))
 }

@@ -7,7 +7,7 @@
 \method{print}{segre_cp_fit}(x, ...)
 }
 \arguments{
-\item{x}{A fitted object from \code{\link[=segre_decompose]{segre_decompose()}} or \code{\link[=segre_regress]{segre_regress()}}.}
+\item{x}{A fit from \code{\link[=segre_decompose]{segre_decompose()}} or \code{\link[=segre_regress]{segre_regress()}}.}
 
 \item{...}{Unused.}
 }

@@ -2,17 +2,24 @@
 % Please edit documentation in R/data-components.R
 \name{cp_relative_error}
 \alias{cp_relative_error}
-\title{Relative Frobenius error between two CP tensors}
+\title{Relative error between two CP tensors}
 \usage{
 cp_relative_error(estimate, truth)
 }
 \arguments{
-\item{estimate, truth}{CP component lists or fitted \code{segre_cp_fit} objects.}
+\item{estimate, truth}{Lists of CP components (see \code{\link[=cp_components]{cp_components()}}) or
+fits from \code{\link[=segre_decompose]{segre_decompose()}} or \code{\link[=segre_regress]{segre_regress()}}, with the same mode
+dimensions.}
 }
 \value{
-\verb{||estimate - truth||_F / ||truth||_F}, computed without forming the
-dense tensors.
+The relative Frobenius error.
 }
 \description{
-Relative Frobenius error between two CP tensors
+Computes \eqn{\|\hat T - T\|_F / \|T\|_F}{||estimate - truth||_F / ||truth||_F}
+from the inner products of the factors, without forming the tensors.
+}
+\examples{
+truth <- cp_components(c(2, 1), list(diag(3)[, 1:2], diag(4)[, 1:2]))
+estimate <- cp_components(c(2.1, 0.9), list(diag(3)[, 1:2], diag(4)[, 1:2]))
+cp_relative_error(estimate, truth)
 }

@@ -2,7 +2,7 @@
 % Please edit documentation in R/methods.R
 \name{print.segre_control}
 \alias{print.segre_control}
-\title{Print SegreCP controls}
+\title{Print SegreCP options}
 \usage{
 \method{print}{segre_control}(x, ...)
 }
@@ -15,5 +15,5 @@
 \code{x}, invisibly.
 }
 \description{
-Print SegreCP controls
+Print SegreCP options
 }

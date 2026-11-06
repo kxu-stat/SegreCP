@@ -16,7 +16,7 @@ manual_decomposition_sweep <- function(observed, init, alpha, update_order,
     old_cache <- caches[[i]]
     proposal <- SegreCP:::rgd_step_fused_cpp(
       working_residual, components[[i]]$U, components[[i]]$lambda,
-      alpha, 0L
+      alpha
     )
     new_component <- SegreCP:::.canonicalize_component(
       list(lambda = proposal$lambda, U = proposal$U)
@@ -44,7 +44,7 @@ component_arrays <- function(components) {
   lapply(components, function(comp) rank1_array(comp$lambda, comp$U))
 }
 
-test_that("rank-two decomposition uses immediate Gauss--Seidel residual refresh", {
+test_that("each update uses the components already updated in the iteration", {
   set.seed(31)
   dims <- c(2, 3, 4)
   init <- list(

@@ -1,4 +1,7 @@
-# Internal predicate that does not require attaching rTensor.
+# Input checks, conversion of tensors, designs and responses, and CP
+# components.
+
+# TRUE for an rTensor::Tensor, without attaching rTensor.
 .is_rtensor <- function(x) {
   inherits(x, "Tensor") && methods::is(x, "Tensor")
 }
@@ -33,15 +36,18 @@
   as.integer(x)
 }
 
-#' Convert an array-like tensor to a base R array
+#' Convert a tensor to a base R array
 #'
-#' `SegreCP` uses a base R array internally because its contiguous numeric
-#' storage can be passed directly to the compiled kernels. An
-#' [rTensor::Tensor] is accepted and converted once at the boundary.
+#' `SegreCP` computes with base R arrays. The fitting functions call
+#' `as_segre_array()` on their input, so an `rTensor::Tensor` can be passed
+#' wherever an array is expected.
 #'
-#' @param x A numeric base R array, matrix, or `rTensor::Tensor`.
-#' @return A numeric base R array with the same dimensions and column-major
-#'   entry order as `x`.
+#' @param x A numeric array or matrix, or an `rTensor::Tensor`.
+#' @return A numeric (double) array with the dimensions and entries of `x`.
+#' @seealso [as_rtensor()] for the conversion in the other direction.
+#' @examples
+#' x <- rTensor::as.tensor(array(1:24, c(2, 3, 4)))
+#' dim(as_segre_array(x))
 #' @export
 as_segre_array <- function(x) {
   if (.is_rtensor(x)) {
@@ -81,18 +87,20 @@ as_segre_array <- function(x) {
   component
 }
 
+# Checks a component list (or list(comps = ...)) and returns it with unit
+# factors and positive weights.
 .validate_components <- function(components, dims = NULL, rank = NULL,
                                  normalize = TRUE) {
   if (is.list(components) && !is.null(components$comps)) {
     components <- components$comps
   }
   if (!is.list(components) || !length(components)) {
-    stop("Initialization must be a non-empty list of CP components.",
+    stop("CP components must be a non-empty list of list(lambda, U).",
          call. = FALSE)
   }
   if (!is.null(rank) && length(components) != rank) {
-    stop(sprintf("Initialization contains %d components; expected rank %d.",
-                 length(components), rank), call. = FALSE)
+    stop(sprintf("Expected %d CP components (the rank), got %d.",
+                 rank, length(components)), call. = FALSE)
   }
 
   inferred <- NULL
@@ -141,20 +149,33 @@ as_segre_array <- function(x) {
     }
   }
   if (!is.null(dims) && !identical(as.integer(dims), as.integer(inferred))) {
-    stop(sprintf("Initialization dimensions are (%s); expected (%s).",
+    stop(sprintf("CP components have dimensions (%s); expected (%s).",
                  paste(inferred, collapse = ", "),
                  paste(dims, collapse = ", ")), call. = FALSE)
   }
   out
 }
 
-#' Construct CP components from factor matrices
+#' CP components from weights and factor matrices
 #'
-#' @param lambda Numeric vector of component weights.
-#' @param factors A list containing one factor matrix per tensor mode. Matrix
-#'   `factors[[k]]` must have `length(lambda)` columns.
-#' @return A list of components. Each component is represented as
-#'   `list(lambda = ..., U = list(...))`.
+#' `SegreCP` represents a CP tensor
+#' \eqn{\sum_i \lambda_i\, u_{i1} \otimes \cdots \otimes u_{id}}{sum_i lambda_i u_i1 o ... o u_id}
+#' as a list of components, component `i` being
+#' `list(lambda = lambda_i, U = list(u_i1, ..., u_id))`. `cp_components()`
+#' builds this list from factor matrices. The factors are scaled to unit length
+#' (the scales are absorbed into the weights) and a negative weight is made
+#' positive by changing the sign of the first factor.
+#'
+#' @param lambda Weights, one per component.
+#' @param factors A list with one factor matrix per mode. Column `i` of
+#'   `factors[[k]]` is the mode-`k` factor of component `i`.
+#' @return A list of components `list(lambda, U)`.
+#' @examples
+#' A <- matrix(c(1, 0, 0, 1, 1, 0), 3)  # 3 x 2
+#' B <- diag(2)
+#' comps <- cp_components(c(2, 1), list(A, B))
+#' comps[[2]]
+#' reconstruct_cp(comps)
 #' @export
 cp_components <- function(lambda, factors) {
   lambda <- as.numeric(lambda)
@@ -180,13 +201,15 @@ cp_components <- function(lambda, factors) {
   .validate_components(comps, rank = rank)
 }
 
-#' Reconstruct a tensor from CP components
+#' Dense tensor from CP components
 #'
-#' @param components A component list returned by [cp_components()],
-#'   [cp_initialize()], [cp_decompose()], or [cp_regression()]. A fitted object
-#'   is also accepted.
-#' @param format Return a base R `"array"` or an `"rTensor"` Tensor.
-#' @return The reconstructed dense tensor.
+#' @param components A list of components `list(lambda, U)` (see
+#'   [cp_components()]) or a fit from [segre_decompose()] or [segre_regress()].
+#' @param format `"array"` or `"rTensor"`.
+#' @return The tensor \eqn{\sum_i \lambda_i\, u_{i1} \otimes \cdots \otimes u_{id}}{sum_i lambda_i u_i1 o ... o u_id}.
+#' @examples
+#' comps <- cp_components(2, list(c(1, 0), c(0, 1, 0)))
+#' reconstruct_cp(comps)
 #' @export
 reconstruct_cp <- function(components, format = c("array", "rTensor")) {
   if (inherits(components, "segre_cp_fit")) components <- components$components
@@ -198,6 +221,8 @@ reconstruct_cp <- function(components, format = c("array", "rTensor")) {
   .format_tensor(array(value, dim = dims), match.arg(format))
 }
 
+# <sum_i x_i, sum_j y_j> for two component lists, from the factor Gram
+# matrices.
 .cp_inner_product <- function(x, y) {
   lx <- vapply(x, `[[`, numeric(1L), "lambda")
   ly <- vapply(y, `[[`, numeric(1L), "lambda")
@@ -211,11 +236,19 @@ reconstruct_cp <- function(components, format = c("array", "rTensor")) {
   as.numeric(crossprod(lx, gram %*% ly))
 }
 
-#' Relative Frobenius error between two CP tensors
+#' Relative error between two CP tensors
 #'
-#' @param estimate,truth CP component lists or fitted `segre_cp_fit` objects.
-#' @return `||estimate - truth||_F / ||truth||_F`, computed without forming the
-#'   dense tensors.
+#' Computes \eqn{\|\hat T - T\|_F / \|T\|_F}{||estimate - truth||_F / ||truth||_F}
+#' from the inner products of the factors, without forming the tensors.
+#'
+#' @param estimate,truth Lists of CP components (see [cp_components()]) or
+#'   fits from [segre_decompose()] or [segre_regress()], with the same mode
+#'   dimensions.
+#' @return The relative Frobenius error.
+#' @examples
+#' truth <- cp_components(c(2, 1), list(diag(3)[, 1:2], diag(4)[, 1:2]))
+#' estimate <- cp_components(c(2.1, 0.9), list(diag(3)[, 1:2], diag(4)[, 1:2]))
+#' cp_relative_error(estimate, truth)
 #' @export
 cp_relative_error <- function(estimate, truth) {
   if (inherits(estimate, "segre_cp_fit")) estimate <- estimate$components
@@ -226,15 +259,20 @@ cp_relative_error <- function(estimate, truth) {
   ee <- .cp_inner_product(estimate, estimate)
   tt <- .cp_inner_product(truth, truth)
   et <- .cp_inner_product(estimate, truth)
-  if (!is.finite(tt) || tt <= 0) stop("`truth` has zero Frobenius norm.")
+  if (!is.finite(tt) || tt <= 0) {
+    stop("`truth` has zero Frobenius norm.", call. = FALSE)
+  }
   sqrt(max(0, ee + tt - 2 * et)) / sqrt(tt)
 }
 
+# Design as an n x prod(input_dims) matrix with rows vec(X_m).
 .as_design_matrix <- function(X, input_dims = NULL) {
   if (.is_rtensor(X)) X <- methods::slot(X, "data")
 
   if (is.list(X) && !is.data.frame(X)) {
-    if (!length(X)) stop("`X` must contain at least one observation.")
+    if (!length(X)) {
+      stop("`X` must contain at least one observation.", call. = FALSE)
+    }
     first <- as_segre_array(X[[1L]])
     inferred <- as.integer(dim(first))
     if (is.null(input_dims)) input_dims <- inferred
@@ -292,11 +330,14 @@ cp_relative_error <- function(estimate, truth) {
   list(X = Xmat, input_dims = input_dims, n = n, source = "array")
 }
 
+# Response as an n x prod(output_dims) matrix with rows vec(Y_m).
 .as_response_block <- function(Y, n, output_dims = NULL) {
   if (.is_rtensor(Y)) Y <- methods::slot(Y, "data")
 
   if (is.list(Y) && !is.data.frame(Y)) {
-    if (length(Y) != n) stop("`Y` and `X` contain different sample sizes.")
+    if (length(Y) != n) {
+      stop("`Y` and `X` contain different sample sizes.", call. = FALSE)
+    }
     first <- as_segre_array(Y[[1L]])
     inferred <- as.integer(dim(first))
     if (is.null(output_dims)) output_dims <- inferred
@@ -315,10 +356,12 @@ cp_relative_error <- function(estimate, truth) {
   }
 
   if (is.numeric(Y) && is.null(dim(Y))) {
-    if (length(Y) != n) stop("A vector `Y` must have length `nrow(X)`.")
+    if (length(Y) != n) {
+      stop("A vector `Y` must have length `nrow(X)`.", call. = FALSE)
+    }
     output_dims <- .as_mode_dims(output_dims, "output_dims", allow_empty = TRUE)
     if (length(output_dims) && prod(output_dims) != 1L) {
-      stop("A vector `Y` represents a scalar response.")
+      stop("A vector `Y` represents a scalar response.", call. = FALSE)
     }
     if (any(!is.finite(Y))) {
       stop("Response entries must all be finite.", call. = FALSE)
@@ -336,7 +379,9 @@ cp_relative_error <- function(estimate, truth) {
     stop("`Y` must contain at least one observation and positive tensor modes.",
          call. = FALSE)
   }
-  if (dy[[1L]] != n) stop("The first dimension of `Y` must equal `nrow(X)`.")
+  if (dy[[1L]] != n) {
+    stop("The first dimension of `Y` must equal `nrow(X)`.", call. = FALSE)
+  }
   if (length(dy) == 2L) {
     Ymat <- unname(as.matrix(Y))
     if (ncol(Ymat) == 1L && (is.null(output_dims) || !length(output_dims))) {
@@ -356,7 +401,8 @@ cp_relative_error <- function(estimate, truth) {
     Ymat <- matrix(as.numeric(Y), nrow = n)
   }
   if (prod(output_dims) != ncol(Ymat)) {
-    stop("`prod(output_dims)` must equal the response size per observation.")
+    stop("`prod(output_dims)` must equal the response size per observation.",
+         call. = FALSE)
   }
   if (any(!is.finite(Ymat))) {
     stop("Response entries must all be finite.", call. = FALSE)

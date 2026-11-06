@@ -2,20 +2,32 @@
 % Please edit documentation in R/data-components.R
 \name{cp_components}
 \alias{cp_components}
-\title{Construct CP components from factor matrices}
+\title{CP components from weights and factor matrices}
 \usage{
 cp_components(lambda, factors)
 }
 \arguments{
-\item{lambda}{Numeric vector of component weights.}
+\item{lambda}{Weights, one per component.}
 
-\item{factors}{A list containing one factor matrix per tensor mode. Matrix
-\code{factors[[k]]} must have \code{length(lambda)} columns.}
+\item{factors}{A list with one factor matrix per mode. Column \code{i} of
+\code{factors[[k]]} is the mode-\code{k} factor of component \code{i}.}
 }
 \value{
-A list of components. Each component is represented as
-\code{list(lambda = ..., U = list(...))}.
+A list of components \code{list(lambda, U)}.
 }
 \description{
-Construct CP components from factor matrices
+\code{SegreCP} represents a CP tensor
+\eqn{\sum_i \lambda_i\, u_{i1} \otimes \cdots \otimes u_{id}}{sum_i lambda_i u_i1 o ... o u_id}
+as a list of components, component \code{i} being
+\code{list(lambda = lambda_i, U = list(u_i1, ..., u_id))}. \code{cp_components()}
+builds this list from factor matrices. The factors are scaled to unit length
+(the scales are absorbed into the weights) and a negative weight is made
+positive by changing the sign of the first factor.
+}
+\examples{
+A <- matrix(c(1, 0, 0, 1, 1, 0), 3)  # 3 x 2
+B <- diag(2)
+comps <- cp_components(c(2, 1), list(A, B))
+comps[[2]]
+reconstruct_cp(comps)
 }

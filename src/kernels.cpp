@@ -6,15 +6,23 @@
 
 using namespace Rcpp;
 
-// The kernels below are extracted from the active decomposition and regression
-// implementations used by the manuscript experiments. They operate on R's
-// column-major array layout.
+// Compiled kernels of SegreCP. Tensors are R arrays in column-major order
+// (first mode fastest); a CP component is list(lambda, U) with unit factors.
+//
+//   tangent_proj_cpp                     projection onto a tangent space
+//   rgd_step_fused_cpp                   one RGD update of one component
+//   make_rank1_vec_cpp                   dense rank-one tensor
+//   update_rank1_cache_inplace_cpp       replace a component in the residual
+//   initialize_decomposition_state_cpp   residual and caches at the start
+//   rgd_sweep_gs_batch_cpp               one RGD iteration over all components
+//   modewise_design_fibres_cpp           regression design contracted with
+//                                        all factors but one
 
+// Projection of the tensor Tvec onto the tangent space at u_1 x ... x u_d:
+//   sum_k u_1 x ... x g_k x ... x u_d - (d - 1) <T, u> u,
+// where g_k is T contracted with all factors but u_k and u = u_1 x ... x u_d.
 // [[Rcpp::export]]
 NumericVector tangent_proj_cpp(NumericVector Tvec, List Ulist) {
-  // Tvec : tensor entries as a numeric vector with dim attribute
-  // Ulist: list of mode vectors u_k (each length dims[k])
-
   IntegerVector dims = Tvec.attr("dim");
   int d = dims.size();
   if (Ulist.size() != d) stop("Length(U) must match tensor order.");
@@ -93,11 +101,14 @@ NumericVector tangent_proj_cpp(NumericVector Tvec, List Ulist) {
 }
 
 
-// Exact rank-1 T-HOSVD of a rank-1 tensor plus a tangent tensor.
-// The proposal has the orthogonal representation
-//   Z = a U + sum_k w_k tensor U_{-k},  with w_k perpendicular to u_k.
-// Every mode Gramian is therefore supported on span(u_k, w_k), so its leading
-// eigenvector is obtained from a 2 x 2 symmetric eigendecomposition.
+// Rank-(1, ..., 1) T-HOSVD of the RGD proposal
+//   Z = lambda_i u - alpha * P(R) = a u + sum_k u_1 x ... x w_k x ... x u_d,
+// with u = u_1 x ... x u_d, P the tangent projection at u, g_k the
+// contractions of the residual R with all factors but u_k, lambda_full =
+// <R, u>, and w_k = -alpha (g_k - lambda_full u_k), which is orthogonal to
+// u_k. The mode-k unfolding of Z has its column space in span(u_k, w_k), so
+// its leading left singular vector comes from a 2 x 2 eigenproblem, solved
+// here in closed form.
 static void exact_tangent_hosvd(
     const std::vector< std::vector<double> >& U0,
     const std::vector< std::vector<double> >& g,
@@ -170,18 +181,17 @@ static void exact_tangent_hosvd(
     lambda_new += b[k] * scoef[k] * pre[k] * suf[k + 1];
 }
 
-// ============================================================
-// Kernel 1 — Fused RGD step (stride-counter, no divisions)
-// ============================================================
+// One RGD update of the component lambda_i u_1 x ... x u_d, with residual
+// Rvec = (sum of components) - observed tensor and step alpha: one pass over
+// Rvec for the contractions, then exact_tangent_hosvd().
 // [[Rcpp::export]]
 List rgd_step_fused_cpp(NumericVector Rvec, List Ulist,
-                        double lambda_i, double alpha, int n_iter) {
-  // n_iter is retained in the signature for API compatibility but unused.
+                        double lambda_i, double alpha) {
   IntegerVector dims = Rvec.attr("dim");
   int d = dims.size();
   R_xlen_t N = Rvec.size();
 
-  // ----- Extract U0 and column-major strides ----------------------------------
+  // Factors and column-major strides.
   std::vector< std::vector<double> > U0(d), Ucur(d);
   for (int k = 0; k < d; ++k) {
     NumericVector uk = Ulist[k];
@@ -192,23 +202,18 @@ List rgd_step_fused_cpp(NumericVector Rvec, List Ulist,
   for (int k = 1; k < d; ++k)
     stride[k] = stride[k-1] * (R_xlen_t)dims[k-1];
 
-  // ----- Pass 1: g_k and lambda_full via prefix-suffix + odometer counter ----
-  //   g_k[i_k] = Σ_{l≠k} R[i] · ∏_{l≠k} u_l^{(0)}[i_l]
-  //   lambda_full = ⟨R_arr, ⊗_l u_l^{(0)}⟩
-  //
-  //   Index decode: instead of d integer divisions per entry we maintain an
-  //   "odometer" idx[] that is incremented by carries — O(1) amortised per
-  //   entry vs O(d) divisions in the original implementation.
+  // Contractions, in one pass over the residual:
+  //   g_k[i_k]    = sum over all indices but i_k of R[i] prod_{l != k} u_l[i_l]
+  //   lambda_full = <R, u_1 x ... x u_d>.
+  // Orders 3 and 4 have explicit loops. The general case keeps the
+  // multi-index in an odometer idx[] that is advanced with carries.
   std::vector< std::vector<double> > g(d);
   for (int k = 0; k < d; ++k) g[k].assign(dims[k], 0.0);
   double lambda_full = 0.0;
 
   if (d == 3) {
-    // Explicit loops avoid dynamic indexing for three-mode tensors.
-    // Contract mode 0 once inside each (i1,i2) fibre and reuse that scalar for
-    // g[1], g[2], and lambda_full.  Compared with updating all three g arrays
-    // at every tensor entry, this removes two N-length accumulation streams
-    // while evaluating the same contractions.
+    // The contraction of each mode-0 fibre with u_0 is reused for g[1], g[2]
+    // and lambda_full.
     R_xlen_t lin = 0;
     for (int i2 = 0; i2 < dims[2]; ++i2) {
       const double u2 = U0[2][i2];
@@ -227,8 +232,8 @@ List rgd_step_fused_cpp(NumericVector Rvec, List Ulist,
       }
     }
   } else if (d == 4) {
-    // Fourth-order counterpart of the staged third-order contraction: the
-    // mode-0 fibre contraction is reused for modes 1--3 and lambda_full.
+    // As for order 3: the mode-0 fibre contraction is reused for modes 1 to 3
+    // and lambda_full.
     R_xlen_t lin = 0;
     for (int i3 = 0; i3 < dims[3]; ++i3) {
       const double u3 = U0[3][i3];
@@ -280,7 +285,7 @@ List rgd_step_fused_cpp(NumericVector Rvec, List Ulist,
     }
   }
 
-  // ----- Exact structure-exploiting T-HOSVD retraction -----------------------
+  // Retraction.
   double lambda_new = 0.0;
   exact_tangent_hosvd(
     U0, g, lambda_i, alpha, lambda_full, Ucur, lambda_new
@@ -295,12 +300,10 @@ List rgd_step_fused_cpp(NumericVector Rvec, List Ulist,
   return List::create(Named("U") = U_out, Named("lambda") = lambda_new);
 }
 
-// ============================================================
-// Kernel 2 — Rank-1 array formation (odometer, no outer())
-// ============================================================
+// Dense tensor lambda * u_1 x ... x u_d. Each entry is computed as
+// (((lambda * u_1[i_1]) * u_2[i_2]) * ...) * u_d[i_d].
 // [[Rcpp::export]]
 NumericVector make_rank1_vec_cpp(double lambda, List Ulist) {
-  // Ulist: list of d vectors; result = lambda * u_1 ⊗ u_2 ⊗ ... ⊗ u_d
   int d = Ulist.size();
   std::vector< std::vector<double> > U(d);
   std::vector<int> dims(d);
@@ -332,16 +335,15 @@ NumericVector make_rank1_vec_cpp(double lambda, List Ulist) {
     }
   }
 
-  // Attach dim attribute so the R wrapper can set it without a copy
+  // The dim attribute makes the result an R array without a copy.
   IntegerVector rdims(d);
   for (int k = 0; k < d; ++k) rdims[k] = dims[k];
   out.attr("dim") = rdims;
   return out;
 }
 
-// ============================================================
-// Kernel 4 — Fused rank-1 cache replacement and residual update
-// ============================================================
+// Replaces a component in place: residual += new - cache, cache = new, where
+// new = lambda * u_1 x ... x u_d.
 // [[Rcpp::export]]
 void update_rank1_cache_inplace_cpp(NumericVector residual,
                                     NumericVector component_cache,
@@ -379,10 +381,9 @@ void update_rank1_cache_inplace_cpp(NumericVector residual,
   }
 }
 
-// Build all initial rank-one caches, their residual, and its objective in one
-// tensor traversal.  The caller supplies validated observed data and unit
-// factors.  Multiplication within each rank-one entry and addition across
-// components retain the order of make_rank1_vec_cpp followed by Reduce(`+`).
+// Dense components (caches), residual = sum of components - observed, and the
+// objective 0.5 ||residual||^2 at the start, in one pass. Entries are
+// multiplied as in make_rank1_vec_cpp and summed over components in order.
 // [[Rcpp::export]]
 List initialize_decomposition_state_cpp(NumericVector observed,
                                         List components) {
@@ -442,16 +443,24 @@ List initialize_decomposition_state_cpp(NumericVector observed,
     Named("objective") = static_cast<double>(0.5L * residual_sq));
 }
 
-// One exact-arithmetic Gauss--Seidel sweep.  The initial residual is streamed
-// once for all component contractions.  Before component i is updated, add
-// the contractions of every preceding new-minus-old rank-one component.
-// Component i's factors have not yet changed, so these are exactly the
-// contractions of its current sequential residual.  No Jacobi substitution
-// or approximation to the existing T-HOSVD retraction is made.
+// One RGD iteration (step alpha; RGN for alpha = 1) over all components,
+// updated one at a time in the order order_i (one-based), each with the
+// residual that includes the components already updated in this iteration.
 //
-// residual = sum_i T_i - observed; order_i is a one-based permutation fixed
-// for this sweep.  Only residual and cache_list are mutated.  All factor
-// vectors returned below own fresh storage, preserving stored CP histories.
+// 1. One pass over the residual computes the contractions of every
+//    component (as in rgd_step_fused_cpp).
+// 2. Before component i is updated, the change of each earlier component j,
+//    from T_j to T_j', is added to these contractions exactly:
+//    <T_j' - T_j, ...> needs only inner products of factors, O(r^2 sum p_k)
+//    operations in total.
+// 3. One pass updates the residual and the caches.
+//
+// The result equals updating the components one at a time with
+// rgd_step_fused_cpp up to rounding. When the residual is so small that the
+// corrections in step 2 could lose accuracy, the components are updated one
+// at a time instead. previous_objective, if given, is 0.5 ||residual||^2 and
+// saves one pass. residual and cache_list are modified in place; the returned
+// factors are new vectors.
 // [[Rcpp::export]]
 List rgd_sweep_gs_batch_cpp(NumericVector residual, List cache_list,
                            List components, IntegerVector order_i,
@@ -506,9 +515,7 @@ List rgd_sweep_gs_batch_cpp(NumericVector residual, List cache_list,
   }
 
   double* residual_ptr = residual.begin();
-  // The public wrapper already holds 0.5 * ||residual||^2 from initialization
-  // or the preceding sweep.  Reuse it; the optional scan preserves internal
-  // five-argument calls without recomputing norms in the contraction loop.
+  // ||residual||^2, from previous_objective if given.
   long double initial_residual_sq = 0.0L;
   if (previous_objective.isNotNull()) {
     NumericVector previous(previous_objective.get());
@@ -519,17 +526,14 @@ List rgd_sweep_gs_batch_cpp(NumericVector residual, List cache_list,
     for (R_xlen_t j = 0; j < N; ++j)
       initial_residual_sq += static_cast<long double>(residual_ptr[j] * residual_ptr[j]);
   }
-  // Numerical fallback, not a stopping or acceptance condition.  It is
-  // selected before computing any batch contractions when the residual is
-  // small enough that new-minus-old low-rank corrections could cancel.
+  // Small residual: update the components one at a time (see above).
   const double precision_scale = 64.0 * std::sqrt(std::numeric_limits<double>::epsilon()) * weight_sum;
   long double residual_norm = std::sqrt(initial_residual_sq);
   if (previous_objective.isNotNull() &&
       std::abs(residual_norm - precision_scale) <=
         8.0L * std::numeric_limits<double>::epsilon() * precision_scale) {
-    // Only at the branch boundary, recover the directly accumulated norm:
-    // rounding a long-double sum to the stored double objective must not
-    // choose a different numerical path from the five-argument interface.
+    // At the threshold, recompute the norm from the residual so that the
+    // choice does not depend on how previous_objective was rounded.
     initial_residual_sq = 0.0L;
     for (R_xlen_t j = 0; j < N; ++j)
       initial_residual_sq += static_cast<long double>(residual_ptr[j] * residual_ptr[j]);
@@ -541,7 +545,7 @@ List rgd_sweep_gs_batch_cpp(NumericVector residual, List cache_list,
       const int i = order[s];
       List old = out[i];
       List proposal = rgd_step_fused_cpp(residual, as<List>(old["U"]),
-        as<double>(old["lambda"]), alpha, 0);
+        as<double>(old["lambda"]), alpha);
       double next_lambda = as<double>(proposal["lambda"]);
       List next_U = proposal["U"];
       if (next_lambda < 0.0) {
@@ -571,8 +575,7 @@ List rgd_sweep_gs_batch_cpp(NumericVector residual, List cache_list,
   }
   R_xlen_t lin = 0;
   if (d == 4 && r == 3) {
-    // Unroll the three components for four-mode tensors. The residual is
-    // held fixed only during this preliminary contraction pass.
+    // Step 1 for rank 3 and order 4, unrolled over the components.
     for (int i3 = 0; i3 < dims[3]; ++i3)
       for (int i2 = 0; i2 < dims[2]; ++i2)
         for (int i1 = 0; i1 < dims[1]; ++i1) {
@@ -596,7 +599,8 @@ List rgd_sweep_gs_batch_cpp(NumericVector residual, List cache_list,
           }
         }
   } else {
-    // Generic order/rank: reuse the contiguous mode-zero fibre contraction.
+    // Step 1, general order and rank: the contraction of each mode-0 fibre
+    // is reused for the other modes.
     std::vector<int> idx(d, 0);
     std::vector<double> product(r), contracted(r), pre(d + 1), suf(d + 1);
     const R_xlen_t fibres = N / dims[0];
@@ -625,6 +629,7 @@ List rgd_sweep_gs_batch_cpp(NumericVector residual, List cache_list,
     }
   }
 
+  // Step 2 and the retractions, in the order order_i.
   std::vector<FactorVectors> updated = U;
   std::vector<double> next_lambda = lambda;
   std::vector<long double> pre_old(d + 1), pre_new(d + 1),
@@ -666,9 +671,8 @@ List rgd_sweep_gs_batch_cpp(NumericVector residual, List cache_list,
       stop("Component %d retracted to a zero/nonfinite tensor.", i + 1);
   }
 
-  // Refresh caches and the dense residual in one pass, adding component
-  // changes in the requested GS order.  Products constant along a contiguous
-  // fibre are hoisted, including the rank-three/four-mode case.
+  // Step 3: residual and caches in one pass, adding the component changes in
+  // the order order_i.
   std::vector<int> idx(d, 0);
   std::vector<double> scale(r);
   std::vector<double*> ordered_cache(r);
@@ -707,8 +711,7 @@ List rgd_sweep_gs_batch_cpp(NumericVector residual, List cache_list,
         residual_sq += static_cast<long double>(next_residual * next_residual);
       }
     } else {
-      // Ordered pointers remove component lookup and Rcpp access from the
-      // innermost loop for every rank, not only the rank-three dispatch.
+      // General rank.
       for (int i0 = 0; i0 < dims[0]; ++i0, ++lin) {
         double next_residual = residual_ptr[lin];
         for (int s = 0; s < r; ++s) {
@@ -735,6 +738,9 @@ List rgd_sweep_gs_batch_cpp(NumericVector residual, List cache_list,
 }
 
 
+// For a design X (n x prod(p_k), rows vec(X_m)) and factors u_1, ..., u_d,
+// returns d matrices: column j of matrix k holds, for each observation, X_m
+// contracted with all factors but u_k, at index j of mode k.
 // [[Rcpp::export]]
 List modewise_design_fibres_cpp(NumericMatrix X, List Ulist) {
   const int n = X.nrow();

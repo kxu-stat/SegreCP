@@ -1,29 +1,54 @@
-#' Control RGD and RGN fitting
+#' Options for RGD and RGN
 #'
-#' The `"manuscript"` profile uses sequential Gauss--Seidel component updates,
-#' fixed component order and RGD step size, exact structured T-HOSVD retraction,
-#' and a fixed iteration cap. The `"practical"` profile enables weight-based
-#' component ordering, a loss-change stopping rule, and regression RGD backtracking.
-#' Both profiles default to `ridge = 0`.
+#' Sets the number of iterations, the stopping rule, the RGD step size and the
+#' order of the component updates for [segre_decompose()] and
+#' [segre_regress()]. One iteration updates each of the CP components once,
+#' in turn.
+#'
+#' The two profiles set defaults for the options left `NULL`:
+#' * `"manuscript"`: the algorithms analyzed in the paper. Components are
+#'   updated in the order 1, ..., r, RGD uses a fixed step, and `max_iter`
+#'   iterations are run.
+#' * `"practical"`: in each iteration the components are updated in
+#'   decreasing order of their weights, the fit stops when the relative
+#'   decrease of the objective is at most `tolerance = 1e-6`, and regression
+#'   RGD uses backtracking.
 #'
 #' @param profile `"manuscript"` or `"practical"`.
-#' @param max_iter Maximum number of complete component sweeps.
-#' @param tolerance Relative loss-change tolerance. Zero disables early stopping.
-#' @param step_size RGD step size or schedule. `NULL` selects the fixed step
-#'   covered by the convergence results of the paper: 0.5 for decomposition and
-#'   `1 / design_variance` (that is, \eqn{\sigma_X^{-2}}) for regression.
-#' @param step_rule `"fixed"`, `"diminishing"`, `"backtracking"`, or
-#'   `"exact_quadratic"`. `NULL` uses a profile/task-specific default.
-#' @param component_order `"fixed"` or `"decreasing_weight"`. `NULL` uses the
-#'   profile default.
-#' @param ridge Nonnegative RGN ridge. `NULL` selects zero in both profiles.
-#'   A positive value adds ridge regularization to the RGN normal equation.
-#' @param normalize_regression If `"sqrt_n"`, divide both the design and response
-#'   by `sqrt(n)` before fitting. Use `"none"` for data already expressed in the
-#'   normalized-operator convention.
-#' @param trace Print one line per completed sweep.
-#' @param armijo,backtrack_factor,max_backtracks Backtracking controls.
-#' @return A `segre_control` object.
+#' @param max_iter Maximum number of iterations.
+#' @param tolerance The fit stops when the objective decreases by a relative
+#'   amount of at most `tolerance` in an iteration. Zero (the default of the
+#'   manuscript profile) runs all `max_iter` iterations.
+#' @param step_size RGD step size: one number, or one per iteration. `NULL`
+#'   gives 0.5 for decomposition and `1 / design_variance` (that is,
+#'   \eqn{\sigma_X^{-2}}) for regression, the fixed steps covered by the
+#'   convergence results of the paper. RGN does not use a step size.
+#' @param step_rule How RGD uses `step_size`: `"fixed"`; `"diminishing"`
+#'   (`step_size / sqrt(t)` in iteration `t`); `"backtracking"` (start from
+#'   `step_size` and shrink it until the Armijo condition holds); or, for
+#'   regression only, `"exact_quadratic"` (the step that minimizes the
+#'   objective along the projected gradient before the retraction, restricted
+#'   to `[1e-10, 100]`). `NULL` gives `"backtracking"` for regression with the
+#'   practical profile and `"fixed"` otherwise.
+#' @param component_order `"fixed"` (1, ..., r) or `"decreasing_weight"`
+#'   (largest current weight first). `NULL` uses the profile default.
+#' @param ridge Nonnegative ridge added to the RGN normal equation in
+#'   regression. The default 0 gives RGN as in the paper.
+#' @param normalize_regression `"sqrt_n"` divides the design and the response
+#'   by `sqrt(n)`, so that the objective is an average over observations.
+#'   `"none"` uses the data as given, for data already divided by `sqrt(n)`.
+#' @param trace If `TRUE`, report the objective after every iteration.
+#' @param armijo,backtrack_factor,max_backtracks Backtracking: the search
+#'   stops at a step `alpha` that decreases the objective by at least
+#'   `armijo * alpha` times the squared norm of the projected gradient, and
+#'   otherwise multiplies `alpha` by `backtrack_factor`, for at most
+#'   `max_backtracks` trials. The update uses the trial step with the smallest
+#'   objective, and leaves the component unchanged if no trial decreases it.
+#' @return An object of class `segre_control`.
+#' @examples
+#' segre_control()
+#' segre_control(profile = "practical", max_iter = 200)
+#' segre_control(max_iter = 50, step_size = 0.3)
 #' @export
 segre_control <- function(
     profile = c("manuscript", "practical"),
