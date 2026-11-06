@@ -1,0 +1,24 @@
+cpu: model name	: Intel(R) Xeon(R) Processor @ 2.10GHz
+R version 4.3.3 (2024-02-29)
+Platform: x86_64-pc-linux-gnu (64-bit)
+Running under: Ubuntu 24.04.5 LTS
+
+Matrix products: default
+BLAS:   /usr/lib/x86_64-linux-gnu/openblas-pthread/libblas.so.3 
+LAPACK: /usr/lib/x86_64-linux-gnu/openblas-pthread/libopenblasp-r0.3.26.so;  LAPACK version 3.12.0
+
+locale:
+[1] C
+
+time zone: America/Indianapolis
+tzcode source: system (glibc)
+
+attached base packages:
+[1] stats     graphics  grDevices utils     datasets  methods   base     
+
+other attached packages:
+[1] SegreCP_0.1.5
+
+loaded via a namespace (and not attached):
+[1] MASS_7.3-60.0.1        compiler_4.3.3         MultiwayRegression_1.2
+[4] Rcpp_1.0.12            digest_0.6.34          RhpcBLASctl_0.23-42   

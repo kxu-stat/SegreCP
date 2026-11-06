@@ -1,0 +1,41 @@
+\begin{table}[!htbp]
+\centering
+\caption{CP decomposition: mean (standard deviation) over 20 replications of the relative Frobenius error at iteration 20, multiplied by $10^3$, in the settings with noise. Bold: lowest mean in each setting.}
+\label{tab:decomposition_errors}
+{\small
+\begin{tabular}{llcccc}
+\toprule
+$s$ & Method & $\rho=0$ & $\rho=0.25$ & $\rho=0.5$ & $\rho=0.75$ \\
+\midrule
+30 & RGD & \textbf{1.88} (0.06) & \textbf{1.88} (0.05) & 1.88 (0.07) & 7.72 (0.05) \\
+ & RGN & \textbf{1.88} (0.06) & \textbf{1.88} (0.05) & \textbf{1.87} (0.07) & 1.90 (0.04) \\
+ & CP-ALS & \textbf{1.88} (0.06) & \textbf{1.88} (0.05) & \textbf{1.87} (0.07) & 1.81 (0.05) \\
+ & Orth-ALS & \textbf{1.88} (0.06) & 17.2 (0.1) & 145 (0) & 500 (2) \\
+ & ICO & \textbf{1.88} (0.06) & 2.13 (0.07) & 3.27 (0.12) & 9.56 (1.33) \\
+ & NLS-GN & \textbf{1.88} (0.06) & \textbf{1.88} (0.05) & \textbf{1.87} (0.07) & \textbf{1.79} (0.06) \\
+ & GN-CG & \textbf{1.88} (0.06) & \textbf{1.88} (0.05) & \textbf{1.87} (0.07) & \textbf{1.79} (0.06) \\
+ & CP-ALS+ELS & \textbf{1.88} (0.06) & \textbf{1.88} (0.05) & \textbf{1.87} (0.07) & \textbf{1.79} (0.06) \\
+ & Hybrid AMDM & \textbf{1.88} (0.06) & 1.95 (0.06) & 2.30 (0.08) & 3.50 (0.13) \\
+\midrule
+10 & RGD & \textbf{5.65} (0.17) & \textbf{5.65} (0.16) & \textbf{5.63} (0.20) & 9.23 (0.13) \\
+ & RGN & \textbf{5.65} (0.17) & \textbf{5.65} (0.16) & \textbf{5.63} (0.20) & 5.41 (0.16) \\
+ & CP-ALS & \textbf{5.65} (0.17) & \textbf{5.65} (0.16) & \textbf{5.63} (0.20) & 5.38 (0.17) \\
+ & Orth-ALS & \textbf{5.65} (0.17) & 18.1 (0.4) & 145 (1) & 485 (7) \\
+ & ICO & \textbf{5.65} (0.17) & 6.39 (0.20) & 9.80 (0.36) & 30.6 (3.5) \\
+ & NLS-GN & \textbf{5.65} (0.17) & \textbf{5.65} (0.16) & \textbf{5.63} (0.20) & \textbf{5.37} (0.17) \\
+ & GN-CG & \textbf{5.65} (0.17) & \textbf{5.65} (0.16) & \textbf{5.63} (0.20) & \textbf{5.37} (0.17) \\
+ & CP-ALS+ELS & \textbf{5.65} (0.17) & \textbf{5.65} (0.16) & \textbf{5.63} (0.20) & \textbf{5.37} (0.17) \\
+ & Hybrid AMDM & \textbf{5.65} (0.17) & 5.87 (0.18) & 6.89 (0.23) & 10.7 (0.4) \\
+\midrule
+3 & RGD & \textbf{23.3} (8.3) & 23.3 (8.4) & 29.7 (10.1) & 32.1 (0.3) \\
+ & RGN & 23.4 (8.4) & 23.4 (8.5) & 29.9 (10.2) & \textbf{31.4} (0.3) \\
+ & CP-ALS & 23.4 (8.5) & 23.4 (8.6) & 29.0 (10.3) & 31.6 (0.4) \\
+ & Orth-ALS & 23.4 (8.4) & 28.9 (6.1) & 142 (2) & 388 (6) \\
+ & ICO & 23.4 (8.5) & 24.5 (6.9) & 39.5 (5.0) & 63.7 (5.6) \\
+ & NLS-GN & 23.4 (8.4) & 23.4 (8.5) & 29.9 (10.2) & \textbf{31.4} (0.3) \\
+ & GN-CG & 23.4 (8.5) & 23.4 (8.6) & 29.9 (10.3) & 31.5 (0.3) \\
+ & CP-ALS+ELS & 23.4 (8.5) & 23.4 (8.6) & \textbf{28.3} (10.2) & 31.7 (0.3) \\
+ & Hybrid AMDM & 23.4 (8.5) & \textbf{23.0} (7.3) & 33.6 (7.9) & 31.8 (0.4) \\
+\bottomrule
+\end{tabular}}
+\end{table}

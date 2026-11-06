@@ -6,3 +6,8 @@
 .RData
 .Rproj.user/
 .DS_Store
+# Files written by a rerun of the experiments (the stored results are the
+# compressed .csv.gz files in reproducibility/output/simulations)
+reproducibility/output/simulations/cases_*/
+reproducibility/output/simulations/raw_*.rds
+reproducibility/output/simulations/results_*.csv

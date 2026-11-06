@@ -1,7 +1,0 @@
-"check","passed"
-"expected terminal rows",TRUE
-"all terminal metrics finite",TRUE
-"identical iteration-0 error across methods",TRUE
-"complete paired contrasts",TRUE
-"expected checkpoint rows",TRUE
-"all mean trajectories monotone",TRUE

@@ -9,7 +9,9 @@
 #' @param profile `"manuscript"` or `"practical"`.
 #' @param max_iter Maximum number of complete component sweeps.
 #' @param tolerance Relative loss-change tolerance. Zero disables early stopping.
-#' @param step_size RGD step size or schedule. `NULL` selects 0.5.
+#' @param step_size RGD step size or schedule. `NULL` selects the fixed step
+#'   covered by the convergence results of the paper: 0.5 for decomposition and
+#'   `1 / design_variance` (that is, \eqn{\sigma_X^{-2}}) for regression.
 #' @param step_rule `"fixed"`, `"diminishing"`, `"backtracking"`, or
 #'   `"exact_quadratic"`. `NULL` uses a profile/task-specific default.
 #' @param component_order `"fixed"` or `"decreasing_weight"`. `NULL` uses the
@@ -40,7 +42,6 @@ segre_control <- function(
   normalize_regression <- match.arg(normalize_regression)
   max_iter <- .as_whole_number(max_iter, "max_iter")
   if (is.null(tolerance)) tolerance <- if (profile == "manuscript") 0 else 1e-6
-  if (is.null(step_size)) step_size <- 0.5
   if (is.null(component_order)) {
     component_order <- if (profile == "manuscript") "fixed" else
       "decreasing_weight"
@@ -51,8 +52,8 @@ segre_control <- function(
   if (length(tolerance) != 1L || !is.finite(tolerance) || tolerance < 0) {
     stop("`tolerance` must be one nonnegative finite number.", call. = FALSE)
   }
-  if (!is.numeric(step_size) || !length(step_size) || any(!is.finite(step_size)) ||
-      any(step_size <= 0)) {
+  if (!is.null(step_size) && (!is.numeric(step_size) || !length(step_size) ||
+      any(!is.finite(step_size)) || any(step_size <= 0))) {
     stop("`step_size` must contain positive finite values.", call. = FALSE)
   }
   if (!is.null(step_rule)) {
@@ -80,7 +81,7 @@ segre_control <- function(
     scheme = "sequential",
     max_iter = max_iter,
     tolerance = as.numeric(tolerance),
-    step_size = as.numeric(step_size),
+    step_size = if (is.null(step_size)) NULL else as.numeric(step_size),
     step_rule = step_rule,
     component_order = component_order,
     ridge = as.numeric(ridge),
@@ -92,13 +93,17 @@ segre_control <- function(
   ), class = "segre_control")
 }
 
-.resolve_control <- function(control, task = c("decomposition", "regression")) {
+.resolve_control <- function(control, task = c("decomposition", "regression"),
+                             design_variance = 1) {
   task <- match.arg(task)
   if (is.null(control)) control <- segre_control()
   if (!inherits(control, "segre_control")) {
     stop("`control` must be created by `segre_control()`.", call. = FALSE)
   }
   out <- control
+  if (is.null(out$step_size)) {
+    out$step_size <- if (task == "regression") 1 / design_variance else 0.5
+  }
   if (is.null(out$step_rule)) {
     out$step_rule <- if (task == "regression" && out$profile == "practical") {
       "backtracking"

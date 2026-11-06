@@ -24,8 +24,11 @@ avoids computing an unused cross-moment.
 
 ## Two explicit profiles
 
-The manuscript profile fixes component order and RGD step size and runs the
-requested number of full iterations unless an explicit tolerance is supplied.
+The manuscript profile fixes the component order and the RGD step size and
+runs the requested number of full iterations unless an explicit tolerance is
+supplied. By default the step size is 0.5 for decomposition and
+\(\sigma_X^{-2}\) for regression (`1 / design_variance`), the fixed steps
+covered by the convergence results of the paper.
 
 ```{r}
 segre_control(profile = "manuscript", max_iter = 20)

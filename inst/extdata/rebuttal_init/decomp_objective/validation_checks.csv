@@ -1,7 +1,0 @@
-"check","passed"
-"expected trajectory rows",TRUE
-"all oracle errors finite",TRUE
-"identical iteration-0 error across methods",TRUE
-"terminal values match final trajectory rows",TRUE
-"all observed-loss trajectories non-increasing",TRUE
-"all six mean trajectories non-increasing",TRUE

@@ -11,6 +11,15 @@
 Segre Manifold}. Computation is performed on base R arrays and dense numeric
 matrices; \code{rTensor::Tensor} inputs are converted once at the API boundary.
 }
+\seealso{
+Useful links:
+\itemize{
+  \item \url{https://github.com/kxu-stat/SegreCP}
+  \item \url{https://arxiv.org/abs/2510.00569}
+  \item Report bugs at \url{https://github.com/kxu-stat/SegreCP/issues}
+}
+
+}
 \author{
 \strong{Maintainer}: Ke Xu \email{kxu6@nd.edu}
 

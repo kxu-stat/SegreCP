@@ -26,7 +26,9 @@ segre_control(
 
 \item{tolerance}{Relative loss-change tolerance. Zero disables early stopping.}
 
-\item{step_size}{RGD step size or schedule. \code{NULL} selects 0.5.}
+\item{step_size}{RGD step size or schedule. \code{NULL} selects the fixed step
+covered by the convergence results of the paper: 0.5 for decomposition and
+\code{1 / design_variance} (that is, \eqn{\sigma_X^{-2}}) for regression.}
 
 \item{step_rule}{\code{"fixed"}, \code{"diminishing"}, \code{"backtracking"}, or
 \code{"exact_quadratic"}. \code{NULL} uses a profile/task-specific default.}

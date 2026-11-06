@@ -59,7 +59,8 @@
 #' tangent design; the returned factors are permuted back.
 #'
 #' `profile = "manuscript"` (the default in [segre_control()]) uses normalized
-#' observations, fixed component order, a fixed RGD step, exact T-HOSVD, no
+#' observations, fixed component order, the fixed RGD step
+#' \eqn{\alpha = \sigma_X^{-2}} unless `step_size` is given, exact T-HOSVD, no
 #' early stopping, and unregularized RGN. The practical profile records every
 #' deviation explicitly in the fit object.
 #'
@@ -80,9 +81,10 @@
 #' @param init_split Optional CPCA mode split in public coefficient-mode order.
 #' @param init_args Named list passed to [cp_initialize()].
 #' @param seed Optional local seed for random initialization.
-#' @param design_variance Positive design-entry variance used in the manuscript
-#'   initializer. With `normalize_regression = "sqrt_n"`, the moment is
-#'   `crossprod(X, Y) / (n * design_variance)` on the original data scale.
+#' @param design_variance Positive design-entry variance \eqn{\sigma_X^2}. It
+#'   scales the initialization moment: with `normalize_regression = "sqrt_n"`,
+#'   the moment is `crossprod(X, Y) / (n * design_variance)` on the original data
+#'   scale. The default RGD step is `1 / design_variance`.
 #' @param control Controls from [segre_control()].
 #' @param keep_history If `TRUE`, retain the public-order CP components at
 #'   initialization and after every completed sweep. This is intended for
@@ -118,14 +120,14 @@ segre_regress <- function(
     keep_history = FALSE) {
   call <- match.call()
   method <- match.arg(method)
-  control <- .resolve_control(control, "regression")
-  rank <- .as_whole_number(rank, "rank")
-  keep_history <- .as_flag(keep_history, "keep_history")
   if (length(design_variance) != 1L || !is.finite(design_variance) ||
       design_variance <= 0) {
     stop("`design_variance` must be one positive finite number.",
          call. = FALSE)
   }
+  control <- .resolve_control(control, "regression", design_variance)
+  rank <- .as_whole_number(rank, "rank")
+  keep_history <- .as_flag(keep_history, "keep_history")
 
   design <- .as_design_matrix(X, input_dims)
   response <- .as_response_block(Y, design$n, output_dims)

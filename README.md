@@ -1,28 +1,22 @@
 # SegreCP
 
-`SegreCP` is the R package accompanying [*Guaranteed Noisy CP Tensor Recovery
-via Riemannian Optimization on the Segre Manifold*](https://arxiv.org/abs/2510.00569)
-by Ke Xu and Yuefeng Han. It implements the paper's Riemannian gradient descent
-(RGD) and Riemannian Gauss–Newton (RGN) methods for CP tensor decomposition,
-scalar-on-tensor regression, and tensor-on-tensor regression. CPCA and HOSVD
-initializations are included.
+`SegreCP` is the R package for *Guaranteed Noisy CP Tensor Recovery via
+Riemannian Optimization on the Segre Manifold* (NeurIPS 2026,
+[arXiv:2510.00569](https://arxiv.org/abs/2510.00569)). It implements Riemannian
+gradient descent (RGD) and Riemannian Gauss–Newton (RGN) on the Segre manifold
+for CP tensor decomposition, scalar-on-tensor regression and tensor-on-tensor
+regression, with CPCA and HOSVD initialization.
 
 ## Installation
 
 ```r
-install.packages("remotes")
-remotes::install_github(
-  "kxu-stat/SegreCP", build_vignettes = TRUE, dependencies = TRUE
-)
-library(SegreCP)
+# install.packages("remotes")
+remotes::install_github("kxu-stat/SegreCP", build_vignettes = TRUE)
 ```
 
-The package requires R 4.2 or later and a C++ build toolchain. R package
-dependencies are listed in [`DESCRIPTION`](DESCRIPTION).
+The package requires R 4.2 or later and a C++ compiler.
 
 ## Example
-
-Fit a rank-one CP decomposition with CPCA initialization and RGD:
 
 ```r
 library(SegreCP)
@@ -35,50 +29,40 @@ factors <- lapply(dims, function(p) {
 signal <- array(3 * Reduce(kronecker, rev(factors)), dim = dims)
 observed <- signal + array(rnorm(prod(dims), sd = 0.05), dim = dims)
 
-fit <- segre_decompose(
-  observed, rank = 1, method = "rgd", init = "cpca",
-  control = segre_control(max_iter = 10)
-)
+fit <- segre_decompose(observed, rank = 1, method = "rgn", init = "cpca",
+                       control = segre_control(max_iter = 10))
 summary(fit)
 convergence_data(fit)
 ```
 
-Choose `method = "rgn"` for RGN or `init = "hosvd"` for HOSVD. The
-[getting-started vignette](vignettes/getting-started.Rmd) gives complete examples
-for decomposition and both regression tasks, including a convergence plot.
-Base R arrays and `rTensor::Tensor` inputs are supported; see the
-[data-layout vignette](vignettes/regression-data-layout.Rmd).
+| Function | Purpose |
+|---|---|
+| `segre_decompose()` | CP decomposition by RGD or RGN |
+| `segre_regress()` | scalar-on-tensor and tensor-on-tensor regression by RGD or RGN |
+| `cp_initialize()` | CPCA, HOSVD or random initialization |
+| `segre_control()` | number of iterations, step size, stopping rule |
+| `reconstruct_cp()`, `coef()`, `predict()`, `convergence_data()` | fitted tensors, coefficients, predictions and objective paths |
 
-The solvers retain exact T-HOSVD retractions and sequential updates while
-reusing tensor contractions and structured regression solves. Different tensor
-orders, CP ranks, and unequal mode dimensions are supported. Both control
-profiles default to `ridge = 0`.
+By default (`profile = "manuscript"`), the components are updated sequentially
+in a fixed order, every update uses the rank-(1, ..., 1) T-HOSVD retraction,
+RGD uses the fixed step size of the paper's convergence results (0.5 for
+decomposition, 1/σ<sub>X</sub><sup>2</sup> for regression), RGN is
+unregularized, and all requested iterations are run. The vignettes
+`getting-started`, `regression-data-layout` and `algorithm-fidelity` describe
+the interface, the data layouts (base R arrays and `rTensor::Tensor` objects)
+and the options.
 
-## Numerical experiments
+## Reproducing the paper
 
-The repository separates new algorithm runs from figures and tables computed
-from saved experiment records:
+The [`reproducibility/`](reproducibility/README.md) directory contains the
+code for all simulations, figures and tables and for the trade-data analysis,
+with instructions. It is part of the GitHub repository, not of the installed
+package.
 
-- [`reproducibility/simulations/`](reproducibility/simulations/README.md)
-  generates the documented decomposition and tensor-on-tensor regression
-  designs and reruns the authors' RGD/RGN methods.
-- The [initialization and convergence
-  vignette](vignettes/rebuttal-initialization-convergence.Rmd) and
-  [tensor-regression results
-  vignette](vignettes/rebuttal-regression-reproducibility.Rmd) regenerate plots
-  and summaries from the bundled replication-level records, including the
-  reported comparison methods.
-- [`reproducibility/real_data/`](reproducibility/real_data/README.md) provides
-  official data sources, preprocessing code, and instructions for rerunning
-  the authors' methods on the trade-data analysis. Third-party raw and
-  processed data are not distributed here.
+## Citation
 
-The [experiment guide](reproducibility/README.md) gives the run commands and
-explains which figures are rebuilt from recorded results.
+Run `citation("SegreCP")` in R for the reference to the paper.
 
-## Citation and contact
+## License
 
-Please cite [Xu and Han, arXiv:2510.00569](https://arxiv.org/abs/2510.00569).
-The package also provides `citation("SegreCP")` in R. For questions, contact
-[Ke Xu](mailto:kxu6@nd.edu). The code is released under the
-[MIT License](LICENSE.md).
+MIT; see [`LICENSE.md`](LICENSE.md).

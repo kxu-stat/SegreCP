@@ -65,9 +65,10 @@ both applied to the normalized adjoint moment in public input-output order.}
 
 \item{seed}{Optional local seed for random initialization.}
 
-\item{design_variance}{Positive design-entry variance used in the manuscript
-initializer. With \code{normalize_regression = "sqrt_n"}, the moment is
-\code{crossprod(X, Y) / (n * design_variance)} on the original data scale.}
+\item{design_variance}{Positive design-entry variance \eqn{\sigma_X^2}. It
+scales the initialization moment: with \code{normalize_regression = "sqrt_n"},
+the moment is \code{crossprod(X, Y) / (n * design_variance)} on the original data
+scale. The default RGD step is \code{1 / design_variance}.}
 
 \item{control}{Controls from \code{\link[=segre_control]{segre_control()}}.}
 
@@ -88,7 +89,8 @@ tangent design; the returned factors are permuted back.
 }
 \details{
 \code{profile = "manuscript"} (the default in \code{\link[=segre_control]{segre_control()}}) uses normalized
-observations, fixed component order, a fixed RGD step, exact T-HOSVD, no
+observations, fixed component order, the fixed RGD step
+\eqn{\alpha = \sigma_X^{-2}} unless \code{step_size} is given, exact T-HOSVD, no
 early stopping, and unregularized RGN. The practical profile records every
 deviation explicitly in the fit object.
 }

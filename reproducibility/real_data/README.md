@@ -1,7 +1,7 @@
 # Reproduce the trade-data analysis
 
 This directory contains the data preparation and fitting scripts for the
-paper's 2018-to-2019 trade analysis. Six exporter-level features from 2018
+2018-to-2019 trade analysis of the paper (Section 5 and Appendix D). Six exporter-level features from 2018
 predict a 2019 response tensor. The scripts belong to the GitHub source
 checkout, not the installed R package. Downloaded and processed data stay in
 a private directory outside the checkout; neither is distributed here.
@@ -70,38 +70,37 @@ dim(trade$Y)       # 80 x 25 x 21 x 8
 table(trade$fold)  # 16 exporters per fold
 ```
 
-## Refit RGD and RGN
+## Fit the methods (Table 1 and Table 8)
 
-The fitting script uses the registered folds and estimates the feature and
-response transformations separately on each training fold. RGD and RGN share
-one CPCA start computed from the training mean cross-moment `X'Y/n`; both use
-zero ridge and the original training-data loss scale. Run a quick check before
-the full five-fold analysis:
+From the repository root, with `TRADE_DATA_DIR` as above:
 
 ```sh
-TRADE_DATA_DIR=/absolute/path/to/private-trade-work
-Rscript reproducibility/real_data/fit_authors_methods.R \
-  --data-dir="$TRADE_DATA_DIR" --check-inputs
-Rscript reproducibility/real_data/fit_authors_methods.R \
-  --data-dir="$TRADE_DATA_DIR" --smoke \
-  --output-dir="$TRADE_DATA_DIR/authors-smoke"
-Rscript reproducibility/real_data/fit_authors_methods.R \
-  --data-dir="$TRADE_DATA_DIR" --folds=1,2,3,4,5 --repetitions=5 \
-  --output-dir="$TRADE_DATA_DIR/authors-results"
+Rscript reproducibility/real_data/run_real_data.R \
+  "$TRADE_DATA_DIR/analysis_official" reproducibility/output/real_data
+Rscript reproducibility/real_data/make_tables.R reproducibility/output/real_data
 ```
 
-The full command uses the accelerated `SegreCP` API (version 0.1.5 or later)
-for 30 iterations. It records train/test RMSE, MAE and R-squared at iterations
-3, 5, 10 and 30, objective paths, controls, fold transformations, shared starts,
-input hashes and the R session in the private output directory. Fit times
-include history recording and exclude preprocessing, shared CPCA and metric
-calculation; the initializer is timed separately. The smoke run is an execution
-check, not an accuracy result. Saved historical results retain their original
-initialization scale and positive ridge; fresh runs use the corrected protocol
-above and write new files.
+`run_real_data.R` fits, in each of the five folds, CP-ALS, RGD and RGN from a
+shared CPCA start, RRR, Tucker-RGD, Tucker-RGN and TT-IHT for 300 iterations,
+and HOPLS with one to three latent blocks, and writes the held-out test RMSE,
+test R² and training RMSE after 3, 5, 10, 30 and 300 iterations to
+`accuracy.csv`. `make_tables.R` writes the rows of Table 1 (iteration 30) and
+Table 8 (`table1_rows.tex`, `paths_rows.tex`). The run takes about 10 minutes
+on one core. `reproducibility/output/real_data/` contains the `accuracy.csv`
+and `session.txt` of the run reported in the paper.
 
-The paper's selected sample used 2019 WITS tariff availability when screening
-reporters, excluding KOR and MEX. Thus the recorded analysis is not a
-strictly 2018-information-only prospective design. The scripts refit RGD/RGN
-on that sample; the separate seven-method table is available as saved
-experiment records in the package's numerical-results vignette.
+Preprocessing within each fold: the six features are standardized with the
+training means and standard deviations, and each response channel is centered
+with its training mean. The CPCA start is computed from the training
+cross-moment `X'Y/n` with the coefficient modes split into {feature, partner}
+and {HS section, channel}. RGD uses the fixed step `1 / lambda_max(X'X)`, so
+that `alpha * sigma_X^2 = 1` with `sigma_X^2` the largest eigenvalue of
+`X'X/n`; RGD and RGN use no ridge. RRR is skipped if the `MultiwayRegression`
+package is not installed.
+
+## Sample selection
+
+The selected sample used 2019 WITS tariff availability when screening
+reporters, excluding KOR and MEX. Thus the analysis is not a strictly
+2018-information-only prospective design; the screen did not use 2019 trade
+outcomes.

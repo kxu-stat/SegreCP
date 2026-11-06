@@ -130,8 +130,7 @@ dim(predict(fit_tensor, X[1:3, , drop = FALSE]))
 ```
 
 See `?segre_decompose`, `?segre_regress`, `?cp_initialize`, and
-`?segre_control` for inputs, outputs, and numerical controls. The simulation
-vignettes reconstruct reported tables from bundled run records. Fresh
-RGD/RGN simulation runners and the code-only real-data workflow are in the
-source checkout's `reproducibility/` directory; the real-data values are not
+`?segre_control` for inputs, outputs, and numerical controls. The code that
+reproduces the simulations and the trade-data analysis of the paper is in the
+`reproducibility/` directory of the GitHub repository; the trade data are not
 distributed with the package.
