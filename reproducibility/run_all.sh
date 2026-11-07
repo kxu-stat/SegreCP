@@ -8,7 +8,7 @@ DATA_DIR=$1
 SIM=reproducibility/output/simulations
 REAL=reproducibility/output/real_data
 
-for study in regression decomposition decomposition_long initialization; do
+for study in regression regression_long decomposition decomposition_long initialization; do
   Rscript reproducibility/simulations/run_simulations.R $study $SIM 1:20
 done
 for study in timing_regression timing_decomposition; do

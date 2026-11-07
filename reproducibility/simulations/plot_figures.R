@@ -3,20 +3,24 @@
 # Run from the repository root:
 #   Rscript reproducibility/simulations/plot_figures.R <results_dir> <figure_dir> <table_dir> paper
 # results_dir contains the results_<study>.csv files written by
-# run_simulations.R (or their .csv.gz copies in output/simulations).
+# run_simulations.R (or their .csv.gz copies in output/simulations): the
+# studies regression and decomposition (Figures 1-4, Tables 6 and 7),
+# regression_long and decomposition_long (Tables 4 and 5, Figure 5, and the
+# coherence-0.75 column of Figures 3 and 4), initialization (Tables 8 and 9)
+# and timing_regression, timing_decomposition (Table 3).
 # figure_dir receives the figures (PDF):
 #   regression_cp.pdf               Figure 1 (main text)
 #   regression_other_formats.pdf    Figure 2 (Appendix C)
 #   decomposition.pdf               Figure 3
 #   decomposition_gauss_newton.pdf  Figure 4
 #   profile_regression.pdf, profile_decomposition.pdf   Figure 5
-# table_dir receives the LaTeX tables of Appendix C (timing_summary_*.csv =
-# Table 3, table_time_regression.tex = Table 4, table_time_decomposition.tex =
-# Table 5, table_errors_regression.tex = Table 6, table_errors_decomposition.tex
-# = Table 7, table_initialization_regression.tex = Table 8,
+# table_dir receives the LaTeX tables of Appendix C (table_timing.tex = Table 3,
+# table_time_regression.tex = Table 4, table_time_decomposition.tex = Table 5,
+# table_errors_regression.tex = Table 6, table_errors_decomposition.tex =
+# Table 7, table_initialization_regression.tex = Table 8,
 # table_initialization_decomposition.tex = Table 9) and the summary CSV files
-# behind them (time_to_level_*.csv, profile_*.csv, rmse_curves_*.csv,
-# errors_initialization.csv).
+# behind them (timing_summary_*.csv, time_to_level_*.csv, profile_*.csv,
+# rmse_curves_*.csv, errors_initialization.csv).
 # With "paper", figures are made at the size they are printed: 5.5 inches wide
 # (the NeurIPS text width) with 8-point text, so LaTeX does not shrink them;
 # appendix figures use most of a page. Otherwise 16 inches wide, 12-point text.
@@ -194,11 +198,12 @@ table_head <- function(caption, label, first) {
 }
 table_tail <- c("\\bottomrule", "\\end{tabular}}", "\\end{table}")
 
-# LaTeX table of the errors at iteration 20 in the settings with noise (without
-# noise they are at machine precision): one row per noise level and method, one
-# column per coherence; bold: lowest mean in each setting at the shown precision.
-error_table <- function(d, methods, label, caption, file) {
-  e <- subset(d, is.finite(snr) & (iteration == 20 | is.na(iteration)) &
+# LaTeX table of the errors at the last iteration (20 in regression, 100 in
+# decomposition) in the settings with noise (without noise they are at machine
+# precision): one row per noise level and method, one column per coherence;
+# bold: lowest mean in each setting at the shown precision.
+error_table <- function(d, last, methods, label, caption, file) {
+  e <- subset(d, is.finite(snr) & (iteration == last | is.na(iteration)) &
                  method %in% methods)
   a <- do.call(data.frame, aggregate(error ~ method + snr + coherence, e, mean_sd))
   a$shown <- as.numeric(sprintf("%.*f", decimals(a$error.mean), a$error.mean))
@@ -228,12 +233,13 @@ convergence_plot(reg, c("Tucker-RGD", "Tucker-RGN", "TT-IHT", "RGN"),
 dec <- fill_paths(read.csv(result_file("decomposition")))
 # At coherence 0.75 the figures show the 100-iteration run (study
 # decomposition_long: same data sets, so its first 20 iterations equal those
-# of the main study).
+# of the main study); the other columns show 20 iterations.
 dec_plot <- dec
 long_file <- result_file("decomposition_long")
 if (file.exists(long_file)) {
   long <- fill_paths(read.csv(long_file))
-  dec_plot <- rbind(subset(dec, coherence != 0.75), long[names(dec)])
+  dec_plot <- rbind(subset(dec, coherence != 0.75),
+                    subset(long, coherence == 0.75)[names(dec)])
   write.csv(rmse_curves(long),
             file.path(table_dir, "rmse_curves_decomposition_long.csv"),
             row.names = FALSE)
@@ -245,17 +251,22 @@ convergence_plot(dec_plot, c("NLS-GN", "GN-CG", "CP-ALS+ELS", "Hybrid AMDM",
   "decomposition_gauss_newton")
 
 # ------------------------------------------------------------------- tables
-error_caption <- paste("mean (standard deviation) over 20 replications of the",
-  "relative Frobenius error at iteration 20, in units of $10^{-3}$, in the",
-  "settings with noise. Bold: lowest mean in each setting.")
-error_table(reg, c("RGD", "RGN", "CP-ALS", "RRR", "Tucker-RGD", "Tucker-RGN",
-                   "TT-IHT", "HOPLS"),
+error_caption <- function(last) paste("mean (standard deviation) over 20",
+  "replications of the relative Frobenius error at iteration", paste0(last, ","),
+  "in units of $10^{-3}$, in the settings with noise. Bold: lowest mean in each",
+  "setting.")
+error_table(reg, 20, c("RGD", "RGN", "CP-ALS", "RRR", "Tucker-RGD", "Tucker-RGN",
+                       "TT-IHT", "HOPLS"),
   "tab:regression_errors",
-  paste("Tensor-on-tensor regression:", error_caption, "HOPLS is not iterative."),
+  paste("Tensor-on-tensor regression:", error_caption(20), "HOPLS is not iterative."),
   "table_errors_regression.tex")
-error_table(dec, c("RGD", "RGN", "CP-ALS", "Orth-ALS", "ICO", "NLS-GN", "GN-CG",
-                   "CP-ALS+ELS", "Hybrid AMDM"),
-  "tab:decomposition_errors", paste("CP decomposition:", error_caption),
+# Table 7 reports the 100-iteration runs (all methods, all settings) when they
+# exist, and the 20-iteration study otherwise.
+dec_errors <- if (file.exists(long_file)) long else dec
+dec_last <- max(dec_errors$iteration)
+error_table(dec_errors, dec_last, c("RGD", "RGN", "CP-ALS", "Orth-ALS", "ICO", "NLS-GN",
+                                    "GN-CG", "CP-ALS+ELS", "Hybrid AMDM"),
+  "tab:decomposition_errors", paste("CP decomposition:", error_caption(dec_last)),
   "table_errors_decomposition.tex")
 write.csv(rmse_curves(reg), file.path(table_dir, "rmse_curves_regression.csv"),
           row.names = FALSE)
@@ -267,6 +278,7 @@ write.csv(rmse_curves(dec), file.path(table_dir, "rmse_curves_decomposition.csv"
 # (diagnostics off, one thread, 20 iterations per fit); seconds_per_iteration =
 # seconds / 20 (not defined for HOPLS, which is not iterative, or the CPCA start).
 # Table 3 of the paper reports 1000 x seconds_per_iteration.
+timing_ms <- list()
 for (task in c("regression", "decomposition")) {
   file <- result_file(paste0("timing_", task))
   if (!file.exists(file)) next
@@ -277,32 +289,70 @@ for (task in c("regression", "decomposition")) {
                        median, na.action = na.pass)
   write.csv(overall, file.path(table_dir, paste0("timing_summary_", task, ".csv")),
             row.names = FALSE)
+  timing_ms[[task]] <- setNames(1000 * overall$seconds_per_iteration, overall$method)
+}
+# Table 3: the two timing summaries side by side, methods in the order of the
+# paper (HOPLS, which is not iterative, is not listed).
+if (length(timing_ms) == 2) {
+  order_reg <- c("RGD", "RGN", "CP-ALS", "RRR", "TT-IHT", "Tucker-RGD", "Tucker-RGN")
+  order_dec <- c("RGD", "RGN", "CP-ALS", "Hybrid AMDM", "Orth-ALS", "ICO",
+                 "NLS-GN", "GN-CG", "CP-ALS+ELS")
+  entry <- function(ms, methods, i) {
+    if (i > length(methods)) return(" & ")
+    paste0(methods[i], " & ", sprintf("%.1f", ms[[methods[i]]]))
+  }
+  rows <- sapply(seq_len(max(length(order_reg), length(order_dec))), function(i)
+    paste(entry(timing_ms$regression, order_reg, i),
+          entry(timing_ms$decomposition, order_dec, i), sep = " & ", collapse = ""))
+  writeLines(c("\\begin{table}[!htbp]", "\\centering",
+               "\\caption{Median running time per iteration in milliseconds over all settings.}",
+               "\\label{tab:timing}", "{\\small",
+               "\\begin{tabular}{lr@{\\qquad}lr}", "\\toprule",
+               "\\multicolumn{2}{c}{Tensor-on-tensor regression} & \\multicolumn{2}{c}{CP decomposition}\\\\",
+               "\\cmidrule(r){1-2}\\cmidrule(l){3-4}",
+               paste0(rows, " \\\\"), table_tail),
+             file.path(table_dir, "table_timing.tex"))
 }
 
 # ------------------------------------------------ time to the error level
-# Per setting with noise: the error level is the lowest RMSE at the last
-# iteration (20, or 100 at coherence 0.75 in decomposition) among CP-ALS, RGD
-# and RGN; iterations = first iteration with RMSE within 1% of the level (a
-# method that never comes within 1% has no row); milliseconds = iterations x the
-# method's median time per iteration in the setting (timing study). Written to
-# time_to_level_<task>.csv.
-time_to_level <- function(d, task) {
+# Studies regression_long and decomposition_long: the data sets of the main
+# studies run for 100 iterations (regression_long: CP-ALS, RGD and RGN only).
+# In each replication of a setting with noise, the error level is the lowest
+# error at iteration 100 among CP-ALS, RGD and RGN, and a method reaches it at
+# the first iteration at which its error is within 1% of the level (Inf if it
+# never does). The table entry is the median over the 20 replications of this
+# iteration, times the method's median time per iteration in the setting
+# (timing study); it is NA only if the method fails in more than half of the
+# replications. Written to time_to_level_<task>.csv, one row per setting and
+# method, with the number of replications in which the level is not reached.
+time_to_level <- function(long, task) {
   file <- result_file(paste0("timing_", task))
   if (!file.exists(file)) return(NULL)
   t <- read.csv(file)
   t$ms_per_iteration <- 1000 * t$seconds / 20
   cell <- aggregate(ms_per_iteration ~ method + snr + coherence, t, median)
-  m <- subset(rmse_curves(d), is.finite(snr))
-  last <- ave(m$iteration, m$snr, m$coherence, FUN = max)
-  level <- aggregate(error ~ snr + coherence,
-    subset(m, iteration == last & method %in% c("CP-ALS", "RGD", "RGN")), min)
-  names(level)[3] <- "level"
-  m <- merge(m, level)
-  first <- aggregate(iteration ~ method + snr + coherence,
+  long <- subset(long, is.finite(snr))
+  last <- max(long$iteration)
+  fin <- subset(long, iteration == last & method %in% c("CP-ALS", "RGD", "RGN"))
+  lev <- aggregate(error ~ snr + coherence + replication, fin, min)
+  names(lev)[4] <- "level"
+  m <- merge(long, lev)
+  first <- aggregate(iteration ~ method + snr + coherence + replication,
                      subset(m, error <= 1.01 * level), min)
-  out <- merge(first, cell)
+  keys <- unique(m[c("method", "snr", "coherence", "replication")])
+  first <- merge(keys, first, all.x = TRUE)
+  first$iteration[is.na(first$iteration)] <- Inf
+  out <- aggregate(iteration ~ method + snr + coherence, first, median)
+  fails <- aggregate(iteration ~ method + snr + coherence, first,
+                     function(x) sum(!is.finite(x)))
+  names(fails)[4] <- "not_reached"
+  out <- merge(out, fails)
+  out$iteration[!is.finite(out$iteration)] <- NA
+  out <- merge(out, cell)
   out$milliseconds <- out$iteration * out$ms_per_iteration
-  out <- out[order(out$snr, out$coherence, out$method), ]
+  out <- out[order(out$snr, out$coherence, out$method),
+             c("snr", "coherence", "method", "iteration", "not_reached",
+               "ms_per_iteration", "milliseconds")]
   write.csv(out, file.path(table_dir, paste0("time_to_level_", task, ".csv")),
             row.names = FALSE)
   out
@@ -317,11 +367,11 @@ time_table <- function(out, methods, label, caption, file) {
     lines <- c(lines, "\\midrule")
     for (k in seq_along(methods)) {
       cells <- sapply(c(0, 0.25, 0.5, 0.75), function(rho) {
-        x <- out[out$snr == snr_value & out$coherence == rho, ]
+        x <- out[out$snr == snr_value & out$coherence == rho & out$method %in% methods, ]
         ms <- round(x$milliseconds[x$method == methods[k]])
-        if (!length(ms)) return("--")
-        best <- min(round(x$milliseconds[x$method %in% methods]))
-        if (ms == best) paste0("\\textbf{", ms, "}") else as.character(ms)
+        if (!length(ms) || is.na(ms)) return("--")
+        if (ms == min(round(x$milliseconds), na.rm = TRUE))
+          paste0("\\textbf{", ms, "}") else as.character(ms)
       })
       lines <- c(lines, paste0(if (k == 1) snr_value else "", " & ", methods[k],
                                " & ", paste(cells, collapse = " & "), " \\\\"))
@@ -332,15 +382,17 @@ time_table <- function(out, methods, label, caption, file) {
 
 # Performance profiles (Dolan and More, 2002): for each method, the fraction
 # of the 12 settings with noise in which its value (time to the error level,
-# or RMSE at the last iteration) is at most tau times the best value in the
-# setting. A method without a value in a setting (it does not reach the level)
-# is not within any factor there. Where the best time is 0 (every method starts
-# at the level), the methods with time 0 are within factor 1.
+# or RMSE at the last iteration) is at most tau times the best value in the setting.
+# A method without a value in a setting (it does not reach the level) is not
+# within any factor there. Where the best time is 0 (every method starts at
+# the level), the methods with time 0 are within factor 1.
 profile_rows <- function(x, value, methods, taus) {
+  x <- x[x$method %in% methods, ]
   best <- aggregate(x[[value]] ~ snr + coherence, x, min)
   names(best)[3] <- "best"
   x <- merge(x, best)
-  x$ratio <- ifelse(x$best == 0, ifelse(x[[value]] == 0, 1, Inf), x[[value]] / x$best)
+  v <- ifelse(is.na(x[[value]]), Inf, x[[value]])
+  x$ratio <- ifelse(x$best == 0, ifelse(v == 0, 1, Inf), v / x$best)
   rows <- NULL
   for (m in methods) {
     r <- x$ratio[x$method == m]
@@ -349,19 +401,25 @@ profile_rows <- function(x, value, methods, taus) {
   }
   rows
 }
-profile_figure <- function(d, out, methods, file) {
+# d, last: the data and iteration of the error table (Table 6 or 7);
+# out: the times to the level; time_methods: the methods of Tables 4 and 5.
+profile_figure <- function(d, last, out, time_methods, error_methods, file) {
   out$ms <- round(out$milliseconds)
-  time <- profile_rows(out, "ms", methods, 2^seq(0, 4, by = 0.05))
-  e <- subset(d, is.finite(snr) & method %in% methods)
-  last <- ave(e$iteration, e$snr, e$coherence, FUN = function(i) max(i, na.rm = TRUE))
-  e <- subset(e, is.na(iteration) | iteration == last)    # HOPLS has no iteration
-  e <- aggregate(error ~ method + snr + coherence, e, function(v) sqrt(mean(v^2)))
-  err <- profile_rows(e, "error", methods, seq(1, 2, by = 0.005))
+  time <- profile_rows(out, "ms", time_methods, 2^seq(0, 4, by = 0.05))
+  e <- subset(d, is.finite(snr) & (iteration == last | is.na(iteration)) &
+                 method %in% error_methods)                # HOPLS has no iteration
+  e <- aggregate(error ~ method + snr + coherence, e, mean)      # the means of Tables 6 and 7
+  err <- profile_rows(e, "error", error_methods, seq(1, 2, by = 0.005))
   rows <- rbind(data.frame(measure = "Time to the error level", time),
                 data.frame(measure = "Error at the last iteration", err))
   rows$measure <- factor(rows$measure, levels = unique(rows$measure))
-  rows$method <- factor(rows$method, levels = methods)
-  pts <- subset(rows, (seq_len(nrow(rows)) %% 8) == 0)
+  rows$method <- factor(rows$method, levels = error_methods)
+  # one marker every `period` grid points, staggered by method as in the
+  # convergence figures, so that coinciding profiles stay distinguishable
+  k <- match(as.character(rows$method), error_methods) - 1
+  idx <- ave(seq_len(nrow(rows)), rows$measure, rows$method, FUN = seq_along)
+  period <- ifelse(rows$measure == levels(rows$measure)[1], 8, 20)
+  pts <- subset(rows, (idx - 1 - 2 * k) %% period == 0 & idx > 1)
   shapes <- method_shapes
   shapes["HOPLS"] <- 9                                    # a point shape for HOPLS
   p <- ggplot(rows, aes(tau, fraction, colour = method, shape = method)) +
@@ -370,41 +428,55 @@ profile_figure <- function(d, out, methods, file) {
     facet_wrap(vars(measure), scales = "free_x") +
     scale_x_continuous(trans = "log2", breaks = function(lim)
       if (lim[2] > 3) c(1, 2, 4, 8, 16) else c(1, 1.25, 1.5, 2)) +
-    scale_colour_manual(values = method_cols, breaks = methods) +
-    scale_shape_manual(values = shapes, breaks = methods) +
+    scale_colour_manual(values = method_cols, breaks = error_methods) +
+    scale_shape_manual(values = shapes, breaks = error_methods) +
     labs(x = expression(tau), y = "Fraction of settings",
          colour = NULL, shape = NULL) +
-    guides(colour = guide_legend(nrow = if (length(methods) > 5) 2 else 1)) +
+    guides(colour = guide_legend(nrow = if (length(error_methods) > 5) 2 else 1)) +
     figure_theme
   save_figure(p, file, height = 2.7)
   write.csv(rows, file.path(table_dir, paste0(file, ".csv")), row.names = FALSE)
 }
 
-time_reg <- time_to_level(reg, "regression")
-time_dec <- time_to_level(dec_plot, "decomposition")
-time_caption <- paste("wall-clock time in milliseconds to come within 1\\% of the",
-  "error level of the setting, the lowest root mean square error at the last",
-  "iteration among CP-ALS, RGD and RGN, in the settings with noise. The time is",
-  "the number of iterations needed times the median time per iteration of the",
-  "method in the setting. --: not reached. Bold: fastest in each setting.")
-if (!is.null(time_reg)) {
-  time_table(time_reg, c("RGD", "RGN", "CP-ALS"), "tab:time_regression",
-    paste("Tensor-on-tensor regression:", time_caption, "The last iteration is 20.",
-          "RRR, Tucker-RGD, Tucker-RGN, TT-IHT and HOPLS do not reach the level",
-          "in any setting."),
-    "table_time_regression.tex")
-  profile_figure(reg, time_reg, c("RGD", "RGN", "CP-ALS", "RRR", "Tucker-RGD",
-                                  "Tucker-RGN", "TT-IHT", "HOPLS"), "profile_regression")
+time_caption <- paste("time in milliseconds to come within 1\\% of the error",
+  "level, the lowest error at iteration 100 among CP-ALS, RGD and RGN in the",
+  "replication, in the settings with noise. The time is the median over the",
+  "20 replications of the number of iterations needed, times the median time",
+  "per iteration of the method in the setting. A replication in which the",
+  "method does not reach the level counts as infinitely many iterations.",
+  "Bold: fastest in each setting.")
+reg_long_file <- result_file("regression_long")
+if (file.exists(reg_long_file)) {
+  reg_long <- fill_paths(read.csv(reg_long_file))
+  time_reg <- time_to_level(reg_long, "regression")
+  if (!is.null(time_reg)) {
+    time_table(time_reg, c("RGD", "RGN", "CP-ALS"), "tab:time_regression",
+      paste("Tensor-on-tensor regression:", time_caption,
+            "RRR, Tucker-RGD, Tucker-RGN, TT-IHT and HOPLS are not shown, as they",
+            "reach the level in fewer than half of the replications in every",
+            "setting."),
+      "table_time_regression.tex")
+    profile_figure(reg, 20, time_reg, c("RGD", "RGN", "CP-ALS"),
+      c("RGD", "RGN", "CP-ALS", "RRR", "Tucker-RGD", "Tucker-RGN", "TT-IHT", "HOPLS"),
+      "profile_regression")
+  }
 }
-if (!is.null(time_dec)) {
-  time_table(time_dec, c("RGD", "RGN", "CP-ALS", "Orth-ALS", "ICO", "NLS-GN", "GN-CG",
-                         "CP-ALS+ELS", "Hybrid AMDM"), "tab:time_decomposition",
-    paste("CP decomposition:", time_caption, "The last iteration is 20, or 100 at",
-          "$\\rho=0.75$. At $s=30$ and $\\rho=0$, every method starts at the level."),
-    "table_time_decomposition.tex")
-  profile_figure(dec_plot, time_dec, c("RGD", "RGN", "CP-ALS", "Orth-ALS", "ICO", "NLS-GN",
-                                       "GN-CG", "CP-ALS+ELS", "Hybrid AMDM"),
-                 "profile_decomposition")
+if (file.exists(long_file)) {
+  time_dec <- time_to_level(long, "decomposition")
+  if (!is.null(time_dec)) {
+    time_table(time_dec, c("RGD", "RGN", "CP-ALS", "NLS-GN", "GN-CG", "CP-ALS+ELS",
+                           "Hybrid AMDM"), "tab:time_decomposition",
+      paste("CP decomposition:", time_caption, "At $s=30$ and $\\rho=0$, every",
+            "method starts at the level. Orth-ALS and ICO are not shown, as they",
+            "reach the level in fewer than half of the replications when",
+            "$\\rho>0$."),
+      "table_time_decomposition.tex")
+    profile_figure(dec_errors, dec_last, time_dec,
+      c("RGD", "RGN", "CP-ALS", "NLS-GN", "GN-CG", "CP-ALS+ELS", "Hybrid AMDM"),
+      c("RGD", "RGN", "CP-ALS", "Orth-ALS", "ICO", "NLS-GN", "GN-CG", "CP-ALS+ELS",
+        "Hybrid AMDM"),
+      "profile_decomposition")
+  }
 }
 
 # ------------------------------------------------ initialization sensitivity

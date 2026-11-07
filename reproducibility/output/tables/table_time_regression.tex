@@ -1,23 +1,23 @@
 \begin{table}[!htbp]
 \centering
-\caption{Tensor-on-tensor regression: wall-clock time in milliseconds to come within 1\% of the error level of the setting, the lowest root mean square error at the last iteration among CP-ALS, RGD and RGN, in the settings with noise. The time is the number of iterations needed times the median time per iteration of the method in the setting. --: not reached. Bold: fastest in each setting. The last iteration is 20. RRR, Tucker-RGD, Tucker-RGN, TT-IHT and HOPLS do not reach the level in any setting.}
+\caption{Tensor-on-tensor regression: time in milliseconds to come within 1\% of the error level, the lowest error at iteration 100 among CP-ALS, RGD and RGN in the replication, in the settings with noise. The time is the median over the 20 replications of the number of iterations needed, times the median time per iteration of the method in the setting. A replication in which the method does not reach the level counts as infinitely many iterations. Bold: fastest in each setting. RRR, Tucker-RGD, Tucker-RGN, TT-IHT and HOPLS are not shown, as they reach the level in fewer than half of the replications in every setting.}
 \label{tab:time_regression}
 {\small
 \begin{tabular}{llcccc}
 \toprule
 $s$ & Method & $\rho=0$ & $\rho=0.25$ & $\rho=0.5$ & $\rho=0.75$ \\
 \midrule
-30 & RGD & 94 & 101 & 81 & \textbf{211} \\
+30 & RGD & 86 & 84 & 74 & \textbf{196} \\
  & RGN & \textbf{32} & \textbf{34} & \textbf{44} & 234 \\
- & CP-ALS & 69 & 62 & 73 & 275 \\
+ & CP-ALS & 69 & 62 & 64 & 264 \\
 \midrule
-10 & RGD & 78 & 79 & 79 & \textbf{143} \\
+10 & RGD & 78 & 63 & 79 & \textbf{135} \\
  & RGN & \textbf{38} & \textbf{34} & \textbf{49} & 180 \\
- & CP-ALS & 72 & 71 & 63 & 213 \\
+ & CP-ALS & 48 & 71 & 63 & 213 \\
 \midrule
-3 & RGD & 62 & 57 & 134 & -- \\
- & RGN & \textbf{35} & 49 & 148 & \textbf{295} \\
- & CP-ALS & 45 & \textbf{42} & \textbf{63} & -- \\
+3 & RGD & 62 & 57 & 67 & \textbf{148} \\
+ & RGN & \textbf{35} & 49 & \textbf{56} & 174 \\
+ & CP-ALS & 45 & \textbf{42} & 63 & 150 \\
 \bottomrule
 \end{tabular}}
 \end{table}

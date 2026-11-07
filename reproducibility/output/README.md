@@ -9,7 +9,7 @@ that write them.
 | `figures/regression_cp.pdf`, `regression_other_formats.pdf` | Figures 1 and 2 |
 | `figures/decomposition.pdf`, `decomposition_gauss_newton.pdf` | Figures 3 and 4 |
 | `figures/profile_regression.pdf`, `profile_decomposition.pdf`, `tables/profile_*.csv` | Figure 5 |
-| `tables/timing_summary_*.csv` | Table 3 (median seconds per fit and per iteration) |
+| `tables/table_timing.tex`, `timing_summary_*.csv` | Table 3 (median seconds per fit and per iteration) |
 | `tables/table_time_regression.tex`, `table_time_decomposition.tex`, `time_to_level_*.csv` | Tables 4 and 5 |
 | `tables/table_errors_regression.tex`, `table_errors_decomposition.tex` | Tables 6 and 7 |
 | `tables/table_initialization_regression.tex`, `table_initialization_decomposition.tex`, `errors_initialization.csv` | Tables 8 and 9 |

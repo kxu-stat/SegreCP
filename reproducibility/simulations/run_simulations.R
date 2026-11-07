@@ -4,12 +4,13 @@
 #   Rscript reproducibility/simulations/run_simulations.R <study> <out_dir> [replications]
 # study:
 #   regression           tensor-on-tensor regression, 20 iterations
-#                        (Figures 1, 2 and 5, Tables 4 and 6)
-#   decomposition        CP decomposition, 20 iterations (Figures 3, 4 and 5,
-#                        Tables 5 and 7)
-#   decomposition_long   CP decomposition at coherence 0.75, 100 iterations, on
-#                        the same data sets (coherence 0.75 in Figures 3-5 and
-#                        Table 5)
+#                        (Figures 1, 2 and 5, Table 6)
+#   regression_long      CP-ALS, RGD and RGN for 100 iterations on the same
+#                        data sets (Table 4, Figure 5)
+#   decomposition        CP decomposition, 20 iterations (Figures 3 and 4)
+#   decomposition_long   CP decomposition, 100 iterations, on the same data
+#                        sets (coherence-0.75 column of Figures 3 and 4,
+#                        Tables 5 and 7, Figure 5)
 #   initialization       CPCA, T-HOSVD and random starts in the settings with
 #                        noise (Tables 8 and 9)
 #   timing_regression, timing_decomposition
@@ -50,9 +51,11 @@ source(file.path(code, "simulations.R"))
 source(file.path(code, "decomposition_comparators.R"))
 source(file.path(code, "tucker_rgn.R"))
 
-ITERATIONS <- if (study == "decomposition_long") 100 else 20
+ITERATIONS <- if (study %in% c("regression_long", "decomposition_long")) 100 else 20
 COHERENCE <- c(0, 0.25, 0.5, 0.75)          # also used in the seeds
-RUN_COHERENCE <- if (study == "decomposition_long") 0.75 else COHERENCE
+# regression_long runs only the three methods that share the CPCA start
+REGRESSION_METHODS <- if (study == "regression_long") c("CP-ALS", "RGD", "RGN") else
+  c("CP-ALS", "RGD", "RGN", "RRR", "Tucker-RGD", "TT-IHT")
 SNR <- if (study == "initialization") c(30, 10, 3) else c(Inf, 30, 10, 3)
 RANK <- 3
 KAPPA <- 30
@@ -194,7 +197,7 @@ regression_case <- function(coherence, snr, replication) {
       seed = data$seed)
   }
   paths <- list(); components <- list(); seconds <- numeric(0)
-  for (method in c("CP-ALS", "RGD", "RGN", "RRR", "Tucker-RGD", "TT-IHT")) {
+  for (method in REGRESSION_METHODS) {
     f <- timed(tryCatch(fit(method), error = function(e) {
       message(method, ": ", conditionMessage(e)); NULL }))
     if (is.null(f$value)) next
@@ -210,18 +213,20 @@ regression_case <- function(coherence, snr, replication) {
       f$value$component_history                        # NULL for Tucker / TT
     seconds[method] <- f$seconds
   }
-  tr <- timed(tucker_rgn_tot(data$X_train, matrix(data$Y_train, data$n),
-                             data$input_dims, data$output_dims, rep(RANK, 5),
-                             ITERATIONS))
-  paths[[length(paths) + 1]] <- path_rows("Tucker-RGN",
-    sapply(tr$value$coefficient_history, relative_error, truth = data$truth))
-  seconds["Tucker-RGN"] <- tr$seconds
-  hopls <- timed(tryCatch(fit("HOPLS"), error = function(e) NULL))
-  if (!is.null(hopls$value)) {
-    paths[[length(paths) + 1]] <- data.frame(method = "HOPLS", iteration = NA,
-      error = relative_error(hopls$value$coefficient, data$truth),
-      objective = NA)
-    seconds["HOPLS"] <- hopls$seconds
+  if (study == "regression") {
+    tr <- timed(tucker_rgn_tot(data$X_train, matrix(data$Y_train, data$n),
+                               data$input_dims, data$output_dims, rep(RANK, 5),
+                               ITERATIONS))
+    paths[[length(paths) + 1]] <- path_rows("Tucker-RGN",
+      sapply(tr$value$coefficient_history, relative_error, truth = data$truth))
+    seconds["Tucker-RGN"] <- tr$seconds
+    hopls <- timed(tryCatch(fit("HOPLS"), error = function(e) NULL))
+    if (!is.null(hopls$value)) {
+      paths[[length(paths) + 1]] <- data.frame(method = "HOPLS", iteration = NA,
+        error = relative_error(hopls$value$coefficient, data$truth),
+        objective = NA)
+      seconds["HOPLS"] <- hopls$seconds
+    }
   }
   list(settings = data.frame(task = "regression", coherence = coherence,
          snr = snr, replication = replication, seed = data$seed,
@@ -337,10 +342,11 @@ initialization_case <- function(coherence, snr, replication) {
 
 # --------------------------------------------------------------------------- run
 cases <- expand.grid(replication = replications, snr = SNR,
-                     coherence = RUN_COHERENCE)
+                     coherence = COHERENCE)
 run_case <- switch(study, decomposition = decomposition_case,
                    decomposition_long = decomposition_case,
                    regression = regression_case,
+                   regression_long = regression_case,
                    timing_decomposition = decomposition_timing_case,
                    timing_regression = regression_timing_case,
                    initialization = initialization_case)

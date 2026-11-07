@@ -1,41 +1,35 @@
 \begin{table}[!htbp]
 \centering
-\caption{CP decomposition: wall-clock time in milliseconds to come within 1\% of the error level of the setting, the lowest root mean square error at the last iteration among CP-ALS, RGD and RGN, in the settings with noise. The time is the number of iterations needed times the median time per iteration of the method in the setting. --: not reached. Bold: fastest in each setting. The last iteration is 20, or 100 at $\rho=0.75$. At $s=30$ and $\rho=0$, every method starts at the level.}
+\caption{CP decomposition: time in milliseconds to come within 1\% of the error level, the lowest error at iteration 100 among CP-ALS, RGD and RGN in the replication, in the settings with noise. The time is the median over the 20 replications of the number of iterations needed, times the median time per iteration of the method in the setting. A replication in which the method does not reach the level counts as infinitely many iterations. Bold: fastest in each setting. At $s=30$ and $\rho=0$, every method starts at the level. Orth-ALS and ICO are not shown, as they reach the level in fewer than half of the replications when $\rho>0$.}
 \label{tab:time_decomposition}
 {\small
 \begin{tabular}{llcccc}
 \toprule
 $s$ & Method & $\rho=0$ & $\rho=0.25$ & $\rho=0.5$ & $\rho=0.75$ \\
 \midrule
-30 & RGD & \textbf{0} & 103 & 241 & 1305 \\
- & RGN & \textbf{0} & \textbf{28} & 68 & 383 \\
+30 & RGD & \textbf{0} & 103 & 241 & 1290 \\
+ & RGN & \textbf{0} & \textbf{28} & 68 & 391 \\
  & CP-ALS & \textbf{0} & 45 & 101 & 543 \\
- & Orth-ALS & \textbf{0} & -- & -- & -- \\
- & ICO & \textbf{0} & -- & -- & -- \\
  & NLS-GN & \textbf{0} & 30 & \textbf{55} & \textbf{130} \\
  & GN-CG & \textbf{0} & 42 & 86 & 174 \\
  & CP-ALS+ELS & \textbf{0} & 1067 & 2022 & 6253 \\
- & Hybrid AMDM & \textbf{0} & -- & -- & 808 \\
+ & Hybrid AMDM & \textbf{0} & 746 & 741 & 808 \\
 \midrule
-10 & RGD & \textbf{14} & 66 & 187 & 909 \\
- & RGN & \textbf{14} & \textbf{28} & \textbf{56} & 286 \\
- & CP-ALS & 22 & 41 & 86 & 355 \\
- & Orth-ALS & 27 & -- & -- & -- \\
- & ICO & 29 & -- & -- & -- \\
+10 & RGD & \textbf{14} & 66 & 187 & 895 \\
+ & RGN & \textbf{14} & \textbf{28} & \textbf{56} & 293 \\
+ & CP-ALS & 22 & 41 & 86 & 377 \\
  & NLS-GN & 32 & 29 & 67 & \textbf{108} \\
  & GN-CG & 41 & 38 & 83 & 139 \\
  & CP-ALS+ELS & 538 & 1017 & 1594 & 5274 \\
- & Hybrid AMDM & 26 & -- & -- & 744 \\
+ & Hybrid AMDM & 26 & 746 & 789 & 744 \\
 \midrule
-3 & RGD & 198 & 164 & -- & 342 \\
- & RGN & \textbf{107} & 109 & -- & 68 \\
- & CP-ALS & 114 & \textbf{84} & \textbf{370} & 167 \\
- & Orth-ALS & 141 & -- & -- & -- \\
- & ICO & 113 & -- & -- & -- \\
- & NLS-GN & 323 & 229 & -- & 103 \\
- & GN-CG & 274 & 232 & -- & \textbf{66} \\
- & CP-ALS+ELS & 2248 & 2131 & 5794 & 2162 \\
- & Hybrid AMDM & 109 & 335 & -- & 295 \\
+3 & RGD & 107 & 89 & 140 & 359 \\
+ & RGN & 53 & \textbf{41} & 76 & 68 \\
+ & CP-ALS & \textbf{46} & 42 & \textbf{74} & 167 \\
+ & NLS-GN & 108 & 98 & 132 & 103 \\
+ & GN-CG & 103 & 99 & 129 & \textbf{66} \\
+ & CP-ALS+ELS & 1124 & 1066 & 1580 & 2703 \\
+ & Hybrid AMDM & 54 & 693 & 749 & 295 \\
 \bottomrule
 \end{tabular}}
 \end{table}

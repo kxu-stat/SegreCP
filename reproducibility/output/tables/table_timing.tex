@@ -1,0 +1,21 @@
+\begin{table}[!htbp]
+\centering
+\caption{Median running time per iteration in milliseconds over all settings.}
+\label{tab:timing}
+{\small
+\begin{tabular}{lr@{\qquad}lr}
+\toprule
+\multicolumn{2}{c}{Tensor-on-tensor regression} & \multicolumn{2}{c}{CP decomposition}\\
+\cmidrule(r){1-2}\cmidrule(l){3-4}
+RGD & 15.4 & RGD & 14.9 \\
+RGN & 16.8 & RGN & 14.7 \\
+CP-ALS & 21.6 & CP-ALS & 22.4 \\
+RRR & 338.3 & Hybrid AMDM & 24.5 \\
+TT-IHT & 18.6 & Orth-ALS & 27.2 \\
+Tucker-RGD & 76.3 & ICO & 28.6 \\
+Tucker-RGN & 262.3 & NLS-GN & 32.6 \\
+ &  & GN-CG & 41.3 \\
+ &  & CP-ALS+ELS & 531.8 \\
+\bottomrule
+\end{tabular}}
+\end{table}

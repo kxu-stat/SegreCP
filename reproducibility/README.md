@@ -30,34 +30,36 @@ reported numbers were computed on one machine with an Intel Xeon 2.1 GHz CPU
 and 8 GB of memory, one fit per core and one BLAS thread.
 
 ```sh
-Rscript -e 'install.packages(c("rTensor", "MultiwayRegression", "ggplot2", "scales"))'
+Rscript -e 'install.packages(c("Rcpp", "rTensor", "MultiwayRegression", "ggplot2", "scales"))'
 R CMD INSTALL .        # SegreCP, from the repository root
 ```
 
 ## Running
 
 All commands are run from the repository root; all paths are relative to it.
-`bash reproducibility/run_all.sh` runs the steps in this order:
+`bash reproducibility/run_all.sh <data>` runs the steps in this order:
 
 | Step | Command | Paper | Time on one core |
 |---|---|---|---|
-| 1 | `run_simulations.R regression <out> 1:20` | Figures 1, 2, 5; Tables 4, 6 | 2 h |
-| 2 | `run_simulations.R decomposition <out> 1:20` | Figures 3, 4, 5; Tables 5, 7 | 2 h |
-| 3 | `run_simulations.R decomposition_long <out> 1:20` | Figures 3–5, Table 5 (ρ = 0.75) | 2.5 h |
-| 4 | `run_simulations.R initialization <out> 1:20` | Tables 8, 9 | 1.5 h |
-| 5 | `run_simulations.R timing_regression <out> 1:5` | Tables 3, 4; Figure 5 | 0.5 h |
-| 6 | `run_simulations.R timing_decomposition <out> 1:5` | Tables 3, 5; Figure 5 | 0.5 h |
-| 7 | `plot_figures.R <out> <figures> <tables> paper` | Figures 1–5; Tables 3–9 | 1 min |
-| 8 | `real_data/1_download_sources.R <data>` and `2_download_tariffs.R <data>` | trade data sources | download |
-| 9 | `real_data/3_build_data.R <data>` | prepared trade data | 1 min |
-| 10 | `real_data/run_real_data.R <data>/prepared <out>` | Tables 1, 10 | 10 min |
-| 11 | `real_data/make_tables.R <out>` | Tables 1, 10 | seconds |
+| 1 | `run_simulations.R regression <out> 1:20` | Figures 1, 2, 5; Table 6 | 2 h |
+| 2 | `run_simulations.R regression_long <out> 1:20` | Table 4; Figure 5 | 2 h |
+| 3 | `run_simulations.R decomposition <out> 1:20` | Figures 3, 4 | 2 h |
+| 4 | `run_simulations.R decomposition_long <out> 1:20` | Figures 3, 4 (ρ = 0.75); Tables 5, 7; Figure 5 | 10 h |
+| 5 | `run_simulations.R initialization <out> 1:20` | Tables 8, 9 | 1.5 h |
+| 6 | `run_simulations.R timing_regression <out> 1:5` | Tables 3, 4; Figure 5 | 0.5 h |
+| 7 | `run_simulations.R timing_decomposition <out> 1:5` | Tables 3, 5; Figure 5 | 0.5 h |
+| 8 | `plot_figures.R <out> <figures> <tables> paper` | Figures 1–5; Tables 3–9 | 1 min |
+| 9 | `real_data/1_download_sources.R <data>` and `2_download_tariffs.R <data>` | trade data sources | download |
+| 10 | `real_data/3_build_data.R <data>` | prepared trade data | 1 min |
+| 11 | `real_data/run_real_data.R <data>/prepared <out>` | Tables 1, 10 | 10 min |
+| 12 | `real_data/make_tables.R <out>` | Tables 1, 10 | seconds |
 
-Steps 1–4 can run cases in parallel (`SEGRECP_CORES=<cores>`). The timing
-studies (steps 5–6) must run on one core with one BLAS thread
-(`SEGRECP_CORES=1 OPENBLAS_NUM_THREADS=1`) and nothing else running. A run
-that stops can be restarted with the same command: finished cases are kept in
-`<out>/cases_<study>/` and skipped.
+`run_all.sh` takes `<data>`, a directory outside the repository for the trade
+data (about 2 GB), as its argument. Steps 1–5 can run cases in parallel
+(`SEGRECP_CORES=<cores>`). The timing studies (steps 6–7) must run on one core
+with one BLAS thread (`SEGRECP_CORES=1 OPENBLAS_NUM_THREADS=1`) and nothing
+else running. A run that stops can be restarted with the same command:
+finished cases are kept in `<out>/cases_<study>/` and skipped.
 
 To rebuild the figures and tables of the simulations without rerunning them,
 use the stored results:
@@ -78,14 +80,17 @@ Rscript reproducibility/simulations/plot_figures.R reproducibility/output/simula
   and 10. The prepared trade data are in the supplementary material of the
   paper (see `real_data/README.md`).
 
-Rerunning a case reproduces the stored errors up to floating-point rounding,
-which is largest for CP-ALS+ELS (relative differences below 1e-7).
+Rerunning a case reproduces the stored errors up to floating-point rounding:
+relative differences below 1e-6 in the settings with noise and absolute
+differences below 1e-7 without noise.
 
 ## Simulation design
 
 - Settings: coherence ρ ∈ {0, 0.25, 0.5, 0.75} times signal-to-noise ratio of
   the weakest component s ∈ {∞, 30, 10, 3}; 20 replications per setting; rank
-  3; condition number κ = 30; 20 iterations (100 in `decomposition_long`).
+  3; condition number κ = 30; 20 iterations, and 100 iterations on the same
+  data sets in `regression_long` (CP-ALS, RGD and RGN) and
+  `decomposition_long` (all methods).
   With df = 1 + Σ(p_ℓ − 1), s = λ_r / (σ √df) in decomposition and
   s = λ_r / (σ √(df/n)) in regression.
 - Factors: in each mode, the Cholesky factor of the Gram matrix with entries
@@ -95,10 +100,11 @@ which is largest for CP-ALS+ELS (relative differences below 1e-7).
 - Regression: X_m ∈ R^(10×10×10), Y_m ∈ R^(10×10), n = 1000, design rows
   vec(X_m)/√n with standard normal entries (σ_X = 1), λ_i =
   κ^(1/2−(i−1)/(r−1)), seed 20261204 + 100 k + replication.
-- Starts: CP-ALS, RGD and RGN share the CPCA start (`SegreCP::cp_initialize`,
-  in regression applied to X'Y with the input and output modes as the two
-  groups of the unfolding). The other methods use their own starts; RRR starts
-  at random.
+- Starts: in decomposition, all methods start from the CPCA start
+  (`SegreCP::cp_initialize`). In regression, CP-ALS, RGD and RGN share the
+  CPCA start, applied to X'Y with the input and output modes as the two groups
+  of the unfolding; RRR starts at random, Tucker-RGD and Tucker-RGN from the
+  T-HOSVD of X'Y, and TT-IHT from its TT-SVD.
 - RGD and RGN: `SegreCP` with ridge 0 and no early stopping. Decomposition:
   RGD step 0.5, components updated in a fixed order. Regression: RGD step
   α = 1 = σ_X^(−2), components updated in decreasing order of the current
@@ -115,8 +121,9 @@ which is largest for CP-ALS+ELS (relative differences below 1e-7).
   error ‖T̂ − T*‖_F / ‖T*‖_F, on a log10 scale; values below 1e-15 are drawn
   at 1e-15 and values above 1 (the random start of RRR) are not drawn.
 - Tables 6 and 7: mean (standard deviation) over the replications of the
-  relative error at iteration 20, times 10³, in the settings with noise; bold
-  is the lowest mean of a setting at the printed precision. Tables 8 and 9:
+  relative error at the last iteration (20 in regression, 100 in
+  decomposition), times 10³, in the settings with noise; bold is the lowest
+  mean of a setting at the printed precision. Tables 8 and 9:
   mean of the relative error, times 10³, at iterations 0, 3, 5, 10 and 20
   from each start; iteration 0 is the error of the start.
 - RRR stops before iteration 20 in 17 of the 320 regression paths, when its
@@ -124,18 +131,18 @@ which is largest for CP-ALS+ELS (relative differences below 1e-7).
   remaining iterations (`fill_paths` in `plot_figures.R`).
 - Table 3: median over all settings of the time of 20 iterations divided by
   20, with the error evaluation switched off (the estimates are unchanged), one
-  fit at a time, one warm-up fit per method and the method order rotated. The
-  shared CPCA start is timed separately.
-- Tables 4 and 5: the error level of a setting is the lowest root mean square
-  error among CP-ALS, RGD and RGN at its last iteration (20, or 100 at
-  ρ = 0.75 in decomposition). The entry is the first iteration at which a
-  method comes within 1% of the level, times its median time per iteration in
-  that setting.
+  fit at a time. The shared CPCA start is timed separately.
+- Tables 4 and 5: from the 100-iteration runs. In each replication, the error
+  level is the lowest relative error among CP-ALS, RGD and RGN at iteration
+  100, and a method reaches it at the first iteration at which its error is
+  within 1% of the level (never, if not within 100 iterations). The entry is
+  the median over the 20 replications of this iteration, times the method's
+  median time per iteration in that setting.
 - Figure 5: performance profiles (Dolan and Moré, 2002) over the 12 settings
   with noise. For each method and factor τ, the fraction of settings in which
-  its time to the error level (left) or its root mean square error at the last
-  iteration (right) is at most τ times the best value of the setting; a method
-  that does not reach the level of a setting is not within any factor there.
+  its time to the error level (left) or its mean error at the last iteration
+  (right) is at most τ times the best value of the setting; a method that does
+  not reach the level of a setting is not within any factor there.
 
 ## Competing methods
 
@@ -160,7 +167,7 @@ which is largest for CP-ALS+ELS (relative differences below 1e-7).
   `RGN_tenreg` (HOSVD retraction) from the code of Luo and Zhang (2023),
   extended to tensor responses, with the normal equations formed from the
   Kronecker structure. TT-IHT: gradient step with step 1 = σ_X^(−2) (real
-  data: 1/λ_max(X'X)) followed by TT-SVD (Qin et al., 2024). HOPLS: three
+  data: 1/λ_max(X'X)) followed by TT-SVD (Qin and Zhu, 2025). HOPLS: three
   latent blocks (Zhao et al., 2013). Multilinear and TT ranks are 3.
 
 ## Implementation notes on SegreCP
